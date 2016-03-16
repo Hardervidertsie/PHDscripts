@@ -1,0 +1,656 @@
+
+
+
+DEG selection for ingenuity pathway analysis:
+p.adj <0.05 with minimal of 500 genes.
+
+1) compound level clustering: use p values, 0 for no pathway, -log10(p) > 1.33 and up for significant pathways
+2) dili group level clustering: fraction of compounds where compound is in.
+
+For both cases only use -log10(p) > 1.33  pathays lists
+
+when loading the data make sure to obtain necessary info for both approaches
+When myDF is completed enter other script for analysis & visualization
+
+
+
+
+
+```{r }
+rm(list=ls())
+
+
+library(gdata)
+library(stringr)
+
+
+rm(list=ls())
+rootPath <- "/home/winks/R_HOME/R_WORK/mArray BAC reporter studie/results/IPA/Metacore"
+myFiles <- dir(rootPath)
+
+myPaths <- paste(rootPath, myFiles, sep = "/")
+ind.tox <- grepl("Liver", myFiles)
+ind.all <- !ind.tox
+
+myFiles.tox <-myPaths[ind.tox]
+myFiles.all <- myPaths[ind.all]
+tox.names = character()
+my.list.tox = list()
+for (i in 1: length(myFiles.tox)){
+
+my.list.tox[[i]] <- read.xls(myFiles.tox[i], row.names = 1 )  
+my.list.tox[[i]] <- my.list.tox[[i]][,1:2]  
+my.list.tox[[i]] <- my.list.tox[[i]][my.list.tox[[i]][,'pValue'] <=0.05,]
+
+my.name.tox <- str_match(myFiles.tox[i], '([^\\/]*)$'   )[1]
+my.name.tox <- gsub(".xls", "", my.name.tox)
+tox.names <- c(tox.names, my.name.tox)
+
+
+}
+all.names = character()
+my.list.all = list()
+for (i in 1: length(myFiles.all)){
+
+my.list.all[[i]] <- read.xls(myFiles.all[i], row.names = 1 )  
+my.list.all[[i]] <- my.list.all[[i]][,1:2]  
+my.list.all[[i]] <- my.list.all[[i]][my.list.all[[i]][,'pValue'] <=0.05,]
+my.name.all <- str_match(myFiles.all[i], '([^\\/]*)$'   )[1]
+my.name.all <- gsub(".xls", "", my.name.all)
+all.names <- c(all.names, my.name.all)
+}
+
+
+ 
+rawData.all <- do.call("rbind", my.list.all)
+rawData.tox <- do.call("rbind", my.list.tox)
+dim(rawData.tox)  
+#1: first pull out all the unique pathways found in myList and create a data.frame
+  #2: Then using matching to pull out appropriate values from myList
+
+  
+  
+
+head(rawData.tox)
+
+dim(rawData)
+length(unique(rawData.all$Ingenuity_Canonical_Pathways))
+# create empty data.frame with row names the unique pathways
+
+myDF <- as.data.frame( matrix(NA, nrow = length( unique ( rawData.tox$Liver.toxicity.endpoint.processes )), ncol = length( myFiles.tox ) ) )
+  rownames( myDF ) <- unique( rawData.tox$Liver.toxicity.endpoint.processes )
+  
+colnames( myDF ) <- tox.names
+      head( myDF )
+ 
+
+
+ for ( i in 1 : ncol( myDF )) {
+   
+   ind <- match( my.list.tox[[ i ]]$Liver.toxicity.endpoint.processes,  rownames( myDF ) ) 
+   colnames(my.list.tox[[ i ]])[2]
+   myDF[ind, i ] <- my.list.tox[[ i ]]$pValue 
+ 
+   }
+colnames(myDF) <- gsub(".Liver", "", colnames(myDF))
+
+setwd("/home/winks/R_HOME/R_WORK/mArray BAC reporter studie/results/IPA")
+write.table(file = "livermetacore_high_24hrs_subsetTest.csv", myDF, sep = ",", col.names = NA)
+
+myDF[is.na( myDF )] <- 0
+  head(myDF)
+
+myDFsel <- subset(myDF, apply(as.matrix(myDF), MARGIN = 1, sum  ) > 50  ) #remove some pathways that are not doing much
+
+
+head(myDFsel)[ , 1:2]
+dim(myDFsel)
+head(myDF)[, 1:2 ]
+dim(myDF)
+
+myDF <- myDFsel
+
+
+```
+
+bellow loading of compound - annotations - re-do after recreating myDF
+```{r }
+library(gdata)
+options(stringsAsFactors=FALSE)
+
+
+myDF <-read.delim("livermetacore_high_24hrs_subsetTest.csv", sep = ",", row.names=1, check.names=F)
+myDF <- -log10(myDF)
+colnames(myDF)
+
+dim(myDF)
+myDF[is.na( myDF )] <- 0
+  head(myDF)
+
+myDFsel <- subset(myDF, apply(as.matrix(myDF), MARGIN = 1, sum  ) > 30  ) #remove some pathways that are not doing much
+dim(myDFsel)
+myDF <- myDFsel
+head(myDFsel)
+
+
+myGroups <- read.xls( file.path( "/home/winks/compounds for screen",  "TGPDrugsAnnotatedbyLabel_ForSteven.xls"), sep =",", header = T)
+
+myAnot <- data.frame(compounds = colnames(myDF) ) #currently used compounds
+
+myGroups <- subset( myGroups, select = c("Name_TGP","SeverityClass", "DILIConcern" ))
+head(myGroups)
+colnames(myGroups)<- c("compound", "SeverityClass", "DILIConcern" )   
+
+unique(myGroups$DILIConcern)
+myGroups$DILIConcern <- gsub("Less-DILI-concern", "Less-DILI-Concern",   myGroups$DILIConcern )
+myGroups$DILIConcern <- gsub("Most-DILI-concern", "Most-DILI-Concern",  myGroups$DILIConcern )
+myGroups$DILIConcern[myGroups$DILIConcern == ""] <-"unknown"
+#8: fatal hepatoxicity  7: acute liver failure    6: liver necrosis    5: Jaundice	4: hyperbilirubinemia		3: liver aminotransferases increase		2: cholestasis	1: steatosis
+
+myGroups$SeverityClass[myGroups$SeverityClass == ""] <-"unknown"
+myGroups$SeverityClass <-gsub("0", "No_DILI_concern",myGroups$SeverityClass   )
+myGroups$SeverityClass <-gsub("1", "steatosis",myGroups$SeverityClass   )
+myGroups$SeverityClass <-gsub("2", "cholestasis",myGroups$SeverityClass   )
+myGroups$SeverityClass <-gsub("3", "liver_aminotransferase_increase",myGroups$SeverityClass   )
+myGroups$SeverityClass <-gsub("4", "hyperbilirubinemia",myGroups$SeverityClass   )
+myGroups$SeverityClass <-gsub("5", "jaundice",myGroups$SeverityClass   )
+myGroups$SeverityClass <-gsub("6", "liver_necrosis",myGroups$SeverityClass   )
+myGroups$SeverityClass <-gsub("7", "acute_liver_failure",myGroups$SeverityClass   )
+myGroups$SeverityClass <-gsub("8", "fatal_hepatotoxicity",myGroups$SeverityClass   )
+
+# parsing problem for TNF
+myGroups$compound[ 167 ] <- "TNF"
+myGroups<-myGroups[-171,]
+sort(myGroups$compound)
+
+ind<-match(myAnot[,1], myGroups$compound)
+
+
+if (length(myAnot[,1]) != sum(!is.na(ind))) 
+  {
+  stop("not guud, some compound did not match in the two lists!")
+  }
+
+myAnot$SeverityClass <- myGroups$SeverityClass[ ind ]
+myAnot$DILIConcern <- myGroups$DILIConcern[ ind ]
+
+myAnot$SeverityClass <- factor(myAnot$SeverityClass)
+myAnot$DILIConcern <- factor(myAnot$DILIConcern)
+myAnot$compounds <- factor(myAnot$compounds)
+
+
+```
+
+
+```{r}
+
+library(pheatmap)   
+library(gplots)
+library("Biobase")
+library("RColorBrewer")
+library(cluster)
+library(fpc)
+library(ggplot2)
+library(kohonen)
+library(hopach)
+library(vegan)
+
+
+head(myAnot)
+head(myDF)
+dim(myDF)
+
+# compound annotations
+rownames(myAnot)<- myAnot$compounds
+myAnot$compounds <-NULL
+head(myAnot)
+levels(myAnot$DILIConcern)
+levels(myAnot$SeverityClass)
+SeverityClass <- c("grey",  "green", "yellow", "orange", "pink","red",  "lightblue" ,"blue", "purple","black" )
+DILIConcern <- c("grey","green", "orange", "darkred")
+names(SeverityClass) <- c("unknown", "No_DILI_concern", "cholestasis", "liver_aminotransferase_increase", "hyperbilirubinemia",
+                         "jaundice", "liver_necrosis",  "acute_liver_failure", "fatal_hepatotoxicity", "WD")
+names(DILIConcern) <- c("unknown",  "No-DILI-Concern", "Less-DILI-Concern", "Most-DILI-Concern")
+myColors <- list(SeverityClass = SeverityClass, DILIConcern=DILIConcern)
+
+-log10(0.05)
+max(myDF)
+head(myAnot)
+myVector<- cbind(as.character(myAnot$SeverityClass ), colnames(myDF)) 
+myVectorInd<- myVector[,1] !="unknown"
+myVectorInd[is.na(myVectorInd)]<-FALSE
+myDFtest <- subset(myDF, select = myVectorInd )   #remove non-classified drugs
+
+myDF <- myDFtest
+
+
+class(myAnot)
+
+
+myAnottest <- myAnot[ myVectorInd,]
+myAnot <- myAnottest
+
+head(myDFtest)
+head(myDF)
+head(myAnot)
+
+#define colors for the pheatmap
+## set color representation for specific values of the data distribution
+quantile_range <- quantile(sqrt(as.matrix(myDF) ), probs = seq(0, 1, 0.1)) 
+as.numeric(quantile_range)
+#color_palette <- colorRampPalette(c(greenred(256)[1]  , greenred(256)[128], greenred(256)[256]  ))(length(quantile_range) - 1)
+
+myDF <- sqrt(myDF)
+head(myDF)
+minV <- min(as.matrix(myDF))
+maxV <- max(myDF)
+
+
+
+hmcols<-colorRampPalette(c("white","blue"))(256)
+
+
+white <- hmcols[1]
+lightestBlue <-hmcols[30]
+lightBlue <- hmcols[80]
+blue <- hmcols[128]
+darkBlue <- hmcols[156]
+darkerBlue <- hmcols[180]
+darkestBlue <-hmcols[256]
+
+x<-1:10
+hist(x, col = darkestBlue)
+
+sqrt(1.33)
+Breakwhite <- sqrt(1.29) 
+BreaklightestBlue <- sqrt(2)
+BreaklightBlue<- sqrt(2.5)
+Breakblue <-  sqrt(3)
+BreakdarkBlue <- sqrt( 3.5)
+BreakdarkerBlue <- sqrt( 4)
+BreakdArkestBlue <- maxV
+
+max(myDF)
+
+  myBreaks <-c(minV, Breakwhite, BreaklightestBlue, BreaklightBlue, Breakblue, BreakdarkBlue, BreakdarkerBlue, BreakdArkestBlue) 
+
+
+color_palette <- c(white, lightestBlue, lightBlue, blue, darkBlue, darkerBlue, darkestBlue)
+
+the distance measure to be used. This must be one of "euclidean", "maximum", "manhattan", "canberra", "binary" or "minkowski". Any unambiguous substring can be given. and "correlation" - = pearson
+
+the agglomeration method to be used. This should be (an unambiguous abbreviation of) one of "ward", "single", "complete", "average", "mcquitty", "median" or "centroid".
+
+geneSet <-"IPA"
+folderNameSampleSet <- "all_MC_high_24hrs_selection"
+#png(file = paste( geneSet, folderNameSampleSet ,zehDist, zehClust ,".png", sep = "_"), width = 5000, height = 10000, units = "px",  res = 8, type = "Xlib")
+
+
+
+
+# = == this part is to divide myDF in two groups sDILI and nsDILI
+
+head(myDF)
+head(myAnot)
+
+all(colnames(myDF )  == rownames(myAnot) )
+
+indS <-  myAnot$DILIConcern %in% "Most-DILI-Concern"
+myDF_sDILI <- myDF[, indS]
+myAnot_sDILI <- myAnot[ indS, ]
+
+indnS <-  myAnot$DILIConcern %in% "Less-DILI-Concern"
+myDF_nsDILI <- myDF[ , indnS ]
+myAnot_nsDILI <- myAnot[indnS , ]
+
+head(myAnot_sDILI)
+
+SeverityClass <- c("grey",  "green", "yellow", "orange", "pink","red",  "lightblue" ,"blue", "purple","black" )
+names(SeverityClass) <- c("unknown", "No_DILI_concern", "cholestasis", "liver_aminotransferase_increase", "hyperbilirubinemia",
+                         "jaundice", "liver_necrosis",  "acute_liver_failure", "fatal_hepatotoxicity", "WD")
+myColors_sDILI <- list(SeverityClass = SeverityClass)
+
+
+
+  head(myAnot_nsDILI)
+
+SeverityClass <- c("grey",  "green", "yellow", "orange", "pink","red",  "lightblue" ,"blue", "purple","black" )
+names(SeverityClass) <- c("unknown", "No_DILI_concern", "cholestasis", "liver_aminotransferase_increase", "hyperbilirubinemia",
+                         "jaundice", "liver_necrosis",  "acute_liver_failure", "fatal_hepatotoxicity", "WD")
+myColors_nsDILI <- list(SeverityClass = SeverityClass)
+
+  
+  
+# this part is to store clustering of pheatmap into text file
+?hclust
+?dist
+method  
+zehDist <- c("manhattan","correlation", "euclidean")[1]
+zehClust <- c("average", "ward", "complete", "centroid")[2]
+dsDILI <- dist(myDF_sDILI , method = zehDist)
+dnDILI <- dist(myDF_nsDILI , method = zehDist)
+osDILI <- hclust(dsDILI, method = zehClust)
+onsDILI <- hclust(dnDILI, method = zehClust)
+
+TdsDILI <- dist(t(myDF_sDILI) , method = zehDist)
+TdnDILI <- dist(t(myDF_nsDILI) , method = zehDist)
+TosDILI <- hclust(TdsDILI, method = zehClust)
+TonsDILI <- hclust(TdnDILI, method = zehClust)
+
+ordered_myDF_sDILI <- myDF_sDILI[osDILI$order, TosDILI$order  ]
+ordered_myDF_nsDILI <- myDF_nsDILI[onsDILI$order, TonsDILI$order  ]
+
+
+# also try kmeans
+kmeans2 <- kmeans(t(myDF_sDILI), center =3,  nstart =25)
+kmeans2$cluster
+o <- order(kmeans2$cluster)
+m2 <- (t(myDF_sDILI)[o , ])
+#genes
+kmeans2G <- kmeans(myDF_sDILI, center =5,  nstart =25)
+oG <- order(kmeans2G$cluster)
+sDILIkmeans <- (m2[ , oG ])
+
+
+
+kmeans2 <- kmeans(t(myDF_nsDILI), center =3,  nstart =25)
+kmeans2$cluster
+o <- order(kmeans2$cluster)
+m2 <- (t(myDF_nsDILI)[o , ])
+#genes
+kmeans2G <- kmeans(myDF_nsDILI, center =3,  nstart =25)
+oG <- order(kmeans2G$cluster)
+nsDILIkmeans <- (m2[ , oG ])
+
+
+
+pdf(file = paste("nsDILIkmeans_3_3", folderNameSampleSet, geneSet, ".pdf", sep = "_") , width = 8, height = 8)
+pheatmap(as.matrix(t(nsDILIkmeans)), col= color_palette, breaks =  myBreaks , main= paste(folderNameSampleSet,geneSet) ,  
+         fontsize_row=2, fontsize_col =6, border_color=NA, scale = "none",
+         cluster_rows = FALSE, cluster_cols = FALSE,  
+          legend = TRUE, fontsize = 6, 
+          legend_breaks = round(myBreaks, digits = 2), treeheight_row = 0, treeheight_col = 0,
+         annotation = myAnot, annotation_colors = myColors
+         )
+
+dev.off()
+
+
+# now reorder rows to match each other and then recluster only the rows based on combined data
+
+ind <- match( rownames(t(nsDILIkmeans) ), rownames(t(sDILIkmeans ) ) )
+reordered_sDILIkmeans <- t(sDILIkmeans)[ind, ]
+all(rownames(reordered_sDILIkmeans) == rownames(t(nsDILIkmeans) ) )
+allData <- cbind(reordered_sDILIkmeans, t(nsDILIkmeans) )
+head(allData)
+allData<-as.data.frame(allData)
+
+
+indBoth <-  myAnot$DILIConcern %in% c("Most-DILI-Concern", "Less-DILI-Concern")
+
+myAnot_bothDILI <- myAnot[ indBoth, ]
+
+
+SeverityClass <- c(  "yellow", "orange", "pink","red",  "lightblue" ,"blue", "purple","black" )
+DILIConcern <- c( "orange", "darkred")
+names(SeverityClass) <- c(  "cholestasis", "liver_aminotransferase_increase", "hyperbilirubinemia",
+                         "jaundice", "liver_necrosis",  "acute_liver_failure", "fatal_hepatotoxicity", "WD")
+names(DILIConcern) <- c("Less-DILI-Concern", "Most-DILI-Concern")
+myColors <- list(SeverityClass = SeverityClass, DILIConcern=DILIConcern)
+
+zehDist <- c("manhattan","correlation", "euclidean")[1]
+zehClust <- c("single" , "average", "ward", "complete", "centroid")[2]
+
+pdf(file = paste("BothSepKmeans", geneSet, folderNameSampleSet ,zehDist, zehClust ,".pdf", sep = "_"), width = 8, height = 10, pointsize = 1)
+fontsize_row = 3; fontsize_col = 3;
+pheatmap(as.matrix(allData), col= color_palette, breaks =  myBreaks , main= paste(geneSet, folderNameSampleSet, sep ="_"),  
+         fontsize_row=fontsize_row, fontsize_col =fontsize_col, border_color=NA, scale = "none",
+         cluster_rows = TRUE, cluster_cols = FALSE, clustering_distance_rows = zehDist, 
+         clustering_method = zehClust,  
+          legend = TRUE, fontsize = 4,
+          legend_breaks = round(myBreaks, digits=2), 
+         annotation = myAnot_bothDILI, annotation_colors = myColors,
+         
+         display_numbers = F )
+dev.off()
+
+
+
+
+
+
+
+#end of the splitting thing for Bob
+
+zehDist <- c("manhattan","correlation", "euclidean")[3]
+zehClust <- c("average", "ward", "complete", "centroid")[4]
+pdf(file = paste( geneSet, folderNameSampleSet ,zehDist, zehClust ,"SEL.pdf", sep = "_"), width = 8, height = 10, pointsize = 1)
+fontsize_row = 3; fontsize_col = 3;
+pheatmap(as.matrix(myDF), col= color_palette, breaks =  myBreaks , main= paste(geneSet, folderNameSampleSet, sep ="_"),  
+         fontsize_row=fontsize_row, fontsize_col =fontsize_col, border_color=NA, scale = "none",
+         cluster_rows = TRUE, cluster_cols = TRUE, clustering_distance_rows = zehDist, 
+         clustering_distance_cols = zehDist, clustering_method = zehClust,  
+          legend = TRUE, fontsize = 4,
+          legend_breaks = round(myBreaks, digits=2), 
+         annotation = myAnot, annotation_colors = myColors,
+         
+         display_numbers = F )
+dev.off()
+
+  ?pheatmap
+#PCA plots: for complete code for pca plot including explaining variables (so genes) see : http://stackoverflow.com/questions/6578355/plotting-pca-biplot-with-ggplot2
+?prcomp
+
+myDFT<-t(myDF)
+
+head(myDFT)
+prin_comp<-rda(myDFT, scale=TRUE)
+pca_scores<-scores(prin_comp)
+head(pca_scores)
+
+pdf(file = paste("PCA", folderNameSampleSet, ".pdf", sep  ="_"), height = 6, width = 6 )
+plot(pca_scores$sites[,1],
+     pca_scores$sites[,2],
+     pch=21,
+     bg=as.numeric(factor( myAnot$DILIConcern ) ),
+     xlim=c(-2,2), 
+     ylim=c(-2,2), 
+     main = paste(geneSet,folderNameSampleSet) )
+ordiellipse(prin_comp,myAnot$DILIConcern,conf=0.8)     
+legend(x=1.3, y = 2, legend = c("unknown (blue)", "sDILI (red)", "nsDILI (black)", "nonDili (green)"  ), cex = 0.6)     
+dev.off()
+
+?legend
+head(myAnot$DILIConcern)
+as.numeric(myAnot$DILIConcern)
+?plot  
+    
+
+To make ellipses, function ordiellipse() of package vegan is used. As arguments PCA analysis object and grouping variable must be provided. To control number of points included in ellipse, argument conf= can be used.
+
+x<-1:10
+hist(x, col = 2)
+
+
+# clustering: how many clusters? take care if it is sample or gene based
+
+
+#"euclidean" -2 , "maximum" -2, "manhattan" -5 , "canberra" -2, "binary" or "minkowski -2"
+myDistDF <- dist(myDFT, method = "manhattan") # sample clustering
+myDistDFM <- (as.matrix(myDistDF))
+silEst <- silcheck(myDistDFM, diss = TRUE)
+silEst
+
+#"euclidean" -2 , "maximum" -2, "manhattan" -2 , "canberra" -2, "binary" or "minkowski -2"
+myDistDF <- dist(myDF, method = "euclidean") # gene clustering
+myDistDFM <- (as.matrix(myDistDF))
+silEst <- silcheck(myDistDFM, diss = TRUE)
+silEst
+
+hobach.hobj <- hopach(myDFT, dmat = myDistDF)
+hobach.hobj$clust$k 
+hobach.hobj$cluster$sizes 
+
+#conclusion: 2 or 4 gene clusters and 2,4,5 or 1 sample clusters
+
+# partition based clustering: kmeans
+
+
+#samples
+kmeans2 <- kmeans(myDFT, center =3,  nstart =25)
+kmeans2$cluster
+
+kmeansoutput <- cbind(kmeans2$cluster )
+o <- order(kmeans2$cluster)
+m2 <- (myDFT[o , ])
+#genes
+kmeans2G <- kmeans(myDF, center =3,  nstart =25)
+
+oG <- order(kmeans2G$cluster)
+m2G <- (m2[ , oG ])
+
+
+pdf(file = paste("kmeans_3_3", folderNameSampleSet, geneSet, ".pdf", sep = "_") , width = 8, height = 8)
+pheatmap(as.matrix(t(m2G)), col= color_palette, breaks =  myBreaks , main= paste(folderNameSampleSet,geneSet) ,  
+         fontsize_row=fontsize_row, fontsize_col =fontsize_col, border_color=NA, scale = "none",
+         cluster_rows = FALSE, cluster_cols = FALSE,  
+          legend = TRUE, fontsize = 6, 
+          legend_breaks = round(myBreaks, digits = 2), treeheight_row = 0, treeheight_col = 0,
+         annotation = myAnot, annotation_colors = myColors
+         )
+
+dev.off()
+
+
+
+
+#8: fatal hepatoxicity  7: acute liver failure    6: liver necrosis    5: Jaundice	4: hyperbilirubinemia		3: liver aminotransferases increase		2: cholestasis	1: steatosis
+    
+    
+    
+write.table(kmeansoutput, file = paste(folderNameSampleSet, "kmeansC2", "csv", sep = "." ), sep = "," )
+
+
+
+kmeans2 <- kmeans(myDFT, center =2,  nstart =25)
+pdf(file = paste("Kmeans_clusterPlot", folderNameSampleSet, geneSet, ".pdf", sep = "_") , width = 8, height = 8)
+clusplot(myDFT, kmeans2$cluster, color= TRUE , shade=TRUE, 
+         labels=2, lines=0, cex = 0.3, main = paste("clusterPlot", folderNameSampleSet, geneSet,  sep = "_") )
+dev.off()
+
+?clusplot
+# partition based clustering: PAM
+
+# euclidian and manhatten
+pamK2.myDF <- pam(myDFT, diss = FALSE, metric= "manhattan", k = 2)
+pamK2G.myDF <- pam(myDF, diss = FALSE, metric= "manhattan", k = 2)
+
+o<-order(pamK2.myDF$cluster)
+oG<-order(pamK2G.myDF$cluster)
+pamM2 <- myDFT[o, oG  ]
+
+
+pdf(file = paste("PAM_2_2_manh", folderNameSampleSet, geneSet, ".pdf", sep = "_") , width = 8, height = 8)
+
+pheatmap(as.matrix(t(pamM2)), col= color_palette, breaks =  myBreaks , main= paste("PAM_S2_G3", folderNameSampleSet, geneSet,  sep = "_"),  
+         fontsize_row=fontsize_row, fontsize_col =fontsize_col, border_color=NA, scale = "none",
+         cluster_rows = FALSE, cluster_cols = FALSE,  
+         
+          legend = TRUE,  fontsize = 6,
+          legend_breaks = round(myBreaks, digits = 2), treeheight_row = 0, treeheight_col = 0,
+         annotation = myAnot, annotation_colors = myColors
+         )
+
+dev.off()
+
+
+
+
+    pamResults <- cbind(pamK2.myDF$cluster)
+write.table(pamResults, file = paste(folderNameSampleSet, "PAM_k5", "csv", sep = "." ), sep = "," )
+
+pamK2.myDF <- pam(myDFT, diss = FALSE, metric= "euclidean", k = 2)
+pdf(file = paste("PAMK2_clusterplot_eucl", folderNameSampleSet, geneSet, ",pdf", sep = "_") , width = 8, height = 8)
+clusplot(myDFT, pamK2.myDF$cluster, color= TRUE , shade=TRUE, 
+         labels=2, lines=0, cex = 0.3, main = paste("PAMK2_clusterPlot", folderNameSampleSet, geneSet,  sep = "_") )
+dev.off()
+
+
+
+# partition based clustering: SOM
+
+
+
+SOM.myDF <- som(myDFT, grid = somgrid( 3, 3))
+SOMG.myDF <- som(as.matrix(myDF), grid = somgrid( 2, 2 ))
+
+table(SOM.myDF$unit.classif)
+
+o<-order(SOM.myDF$unit.classif)
+oG<-order(SOMG.myDF$unit.classif)
+SOMM2 <- myDFT[o, oG  ]
+head(t(SOMM2))
+
+
+pdf(file = paste( "SOM_3_2", folderNameSampleSet, geneSet, ".pdf", sep = "_" ), width = 8, height = 10)
+
+pheatmap(as.matrix(t(SOMM2)), col= color_palette, breaks =  myBreaks , main=paste( "SOM_S3_G4", folderNameSampleSet, geneSet, sep = "_" ),  
+         fontsize_row=fontsize_row, fontsize_col =fontsize_col, border_color=NA, scale = "none",
+         cluster_rows = FALSE, cluster_cols = FALSE,  
+         
+          legend = TRUE, display_numbers = F, fontsize = 6, 
+          legend_breaks = round(myBreaks, digits = 2), treeheight_row = 0, treeheight_col = 0,
+         annotation = myAnot, annotation_colors = myColors
+         )
+
+dev.off()
+
+        cosangle
+euclid
+?distancematrix
+myDist <- distancematrix(myDFT, d = "cosangle")
+hobj <- hopach( myDFT, dmat = myDist)
+myDist <- distancematrix(myDF, d = "cosangle")
+hobjG <- hopach( myDF, dmat = myDist)
+
+table(hobj$clustering$labels)
+table(hobjG$clustering$labels)
+
+o<-order(hobj$clustering$labels)
+oG<-order(hobjG$clustering$labels)
+HOP <- myDFT[o, oG  ]
+head(t(HOP))
+
+
+pdf(file = paste("HM_hopach_cosangle", folderNameSampleSet, geneSet,".pdf", sep = "_")  , width = 8, height = 10 )
+
+pheatmap(as.matrix(t(HOP ) ), col= color_palette, breaks =  myBreaks , main= paste("HM_hopach_euclid", folderNameSampleSet, geneSet, sep = "_"),  
+         fontsize_row=fontsize_row, fontsize_col =fontsize_col, border_color=NA, scale = "none",
+         cluster_rows = FALSE, cluster_cols = FALSE,  
+         
+          legend = TRUE, display_numbers = F, fontsize = 6,
+          legend_breaks = round(myBreaks, digits = 2), treeheight_row =0, treeheight_col = 0,
+         annotation = myAnot, annotation_colors = myColors
+         )
+
+dev.off()
+
+
+
+
+
+  HOB1 <-cbind(rownames(myDFT[hobj$clust$labels == 300, ]), rep(1, sum(hobj$clust$labels == 300 )  ))
+HOB2 <-cbind(rownames(myDFT[hobj$clust$labels == 250, ]), rep(2, sum(hobj$clust$labels == 250 )  ))
+
+hopachgrps <- rbind(HOB1, HOB2)
+write.table(hopachgrps, file = paste(folderNameSampleSet, "Hopach_2_biggest", "csv", sep = "." ), sep = "," )
+
+
+
+
+
+
+
+```
+
+

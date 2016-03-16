@@ -1,0 +1,704 @@
+
+
+heatmap for mip dili meeting
+plan: quick and dirty
+- start from back: manually find 1 good datasets per cell line.
+- include DILI compounds (POC follow-up)
+
+1) create empty data frame with row compound names and cell line columns
+2) get all compounds and all cell line names, standardize these and create the data frame
+3) paste the time-AUC intensity data in this data.frame
+4) make a list with the file paths
+5) manually select best feature
+6) normalize the data
+7) use aheatmap function from IPA script Bram
+
+
+```{r}
+rm(list=ls())
+require(ggplot2)
+require(NMF)
+options(stringsAsFactors=FALSE)
+
+
+all.paths <- list(srxn1_DILI_20140403niii ="H:/POC/data for heatmap transfer/20140403 Nikon 2 transfer/Srxn1/2014_04_03 myData_AUC.txt",  #1
+                  p21_DILI_20140403niii   ="H:/POC/data for heatmap transfer/20140403 Nikon 3 transfer/p21/2014_04_03 myData_AUC.txt",  #2
+                  hspa5_DILI_20140403niii ="H:/POC/data for heatmap transfer/20140403 Nikon 3 transfer/HSPA5/2014_04_03 myData_AUC.txt",#3
+                  ddit3_DILI_20140403nii  ="H:/POC/data for heatmap transfer/20140319 Nikon2_transfer/DDIT3/2014_03_19 myData_AUC.txt"#4
+                  
+#                   btg2_POC_20131030       ="H:/POC/2013-10-30/output CD/btg2/2013_10_30 myData_AUC.txt",#5
+#                   keap1_POC_20131010      ="H:/POC/2013-10-10/output CD/Keap1/2013_10_10 myData_AUC.txt", #6 
+#                   p21_POC_20131030        ="H:/POC/2013-10-30/output CD/p21/2013_10_30 myData_AUC.txt", #7        
+#                   tp53bp1_POC_20130320    ="H:/POC/2013_03_20/TIFs/output CD/TP53BP1/2013_03_20 myData_AUC.txt", #8
+#                   nrf2_POC_20130320       ="H:/POC/2013_03_20/TIFs/output CD/NFE2L2/2013_03_20 myData_AUC.txt", #9
+#                   xbp1_POC_20130206       ="H:/POC/2013_02_06/xbp1 chop bip nrf2 first part/TIFs/output CD/XBP1/2013_02_06 myData_AUC.txt", #10
+#                   p53_POC_20121219        ="H:/POC/2012_12_19 /output CD/TP53/2012_12_19 myData_AUC.txt", #11
+#                   srxn1_POC_20130320      ="H:/POC/2013_03_20/TIFs/output CD/Srxn1/2013_03_20 myData_AUC.txt", #12
+#                   ddit3_POC_20130320      ="H:/POC/2013_03_20/TIFs/output CD/DDIT3/2013_03_20 myData_AUC.txt", #13
+#                   hspa5_POC_20130116      ="H:/POC/2013_01_16/TIFs/output CD/HSPA5/2013_01_16 myData_AUC.txt" #14
+                   )
+
+#atf4 vergeten
+
+
+sel.features <- c("Cytoplasm_Intensity_MeanIntensity_img_gfp",#1
+                  "obj_nc_Intensity_MeanIntensity_img_gfp",#2
+                  "Cytoplasm_Intensity_IntegratedIntensity_img_gfp",#3
+                  "obj_nc_Intensity_MeanIntensity_img_gfp"#4
+                  #"Cytoplasm_Intensity_IntegratedIntensity_img_gfp",#5
+                  #"Image_AreaOccupied_AreaOccupied_filtered_foci", #6
+                  #"obj_nc_Intensity_MeanIntensity_img_gfp", #7
+                  #"Image_AreaOccupied_AreaOccupied_filtered_foci", #8
+                  #"obj_nc_Intensity_MeanIntensity_img_cyto", # 9
+                  #"obj_nc_Intensity_MeanIntensity_img_cyto", # 10
+                  #"obj_nc_Intensity_MeanIntensity_img_cyto", #11
+                  #"obj_cyto_only_Intensity_IntegratedIntensity_img_cyto", #12
+                  #"obj_nc_Intensity_MeanIntensity_img_cyto", #13
+                  #"obj_cyto_only_Intensity_IntegratedIntensity_img_cyto" #14
+                  )
+# read in data:
+AUC.data.raw = list()
+  for(i in seq_along(all.paths)){
+  
+    print(i)
+    AUC.data.raw[[i]] <- read.table(file = all.paths[[i]], sep ="\t", header = T, row.names =1)
+    AUC.data.raw[[i]] <- AUC.data.raw[[i]][ AUC.data.raw[[i]]$variable == sel.features[[i]], ]
+   # group all DMSO:
+   indDMSO <- grep("DMSO", AUC.data.raw[[i]]$treatment)
+   AUC.data.raw[[i]]$treatment[indDMSO] <- "DMSO"
+   AUC.data.raw[[i]]$dose_uM[indDMSO] <- 0
+   # calculate mean of DMSO's
+   
+   AUC.data.raw[[i]] <- aggregate(data = AUC.data.raw[[i]], meanAUC ~ treatment + dose_uM, mean)
+  
+   
+   }
+   AUC.data.raw[[1]][AUC.data.raw[[1]]$treatment == "DMEM", "meanAUC"] <- 0.2
+
+
+all.treatment_dose = list()
+# create treatment_dose levels & gather all treatment_dose in a vector:
+for(i in seq_along(all.paths)){
+    print(i)
+    AUC.data.raw[[i]]$treatment_dose  <- paste( AUC.data.raw[[i]]$treatment, AUC.data.raw[[i]]$dose_uM, sep ="_")
+    all.treatment_dose[[i]] <- unique(AUC.data.raw[[i]]$treatment_dose)
+    }
+
+# make synonyms unique & remove treatments that only killed cells or were autofluorescent or not relevant:
+unique.treatments_dose<- unique(unlist(all.treatment_dose))
+unique.treatments_dose<- sort(unique.treatments_dose)
+  
+  ind_deox        <- grep("deox", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_deox]  
+  ind_Antimycin   <- grep("Antimycin", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_Antimycin]
+  ind_cyclosporin <- grep("Cyclosporin", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_cyclosporin]
+  ind_stauro      <- grep("Staurosporin", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_stauro]
+  ind_oligomycin  <- grep("Oligomycin", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_oligomycin]
+  ind_g_gal  <- grep("g-gal", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_g_gal]
+  #ind_gluc_gal  <- grep("gluc- galact", unique.treatments_dose, ignore.case=TRUE)
+   #   unique.treatments_dose <- unique.treatments_dose[-ind_gluc_gal]
+  ind_y27  <- grep("Y27632", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_y27]
+  ind_Cytochalasin <- grep("Cytochalasin", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_Cytochalasin]
+  ind_Nocodazole <- grep("Nocodazole", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_Nocodazole]
+  ind_CCCP <- grep("CCCP", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_CCCP]
+  
+# verwijderen/veranderen (later)) voor POC-only heatmap
+ind_DMNQ <- grep("DMNQ", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_DMNQ]
+ind_Chlorpromazine <- grep("Chlorpromazine", unique.treatments_dose, ignore.case=TRUE)
+      unique.treatments_dose <- unique.treatments_dose[-ind_Chlorpromazine]
+
+
+unique.treatments_dose 
+# make template-data.frame
+
+#cell_lines<- c(  "srxn1", "keap1", "nrf2", "tp53bp1", "p53", "p21", "btg2", "xbp1", "BiP", "chop")
+cell_lines<- c(  "srxn1_", "p21_","BiP_","chop_", "srxn1", "keap1", "nrf2", "tp53bp1", "p53", "p21", "btg2", "xbp1", "BiP", "chop")
+my.data <- as.data.frame(matrix(NA, nrow = length(unique.treatments_dose), ncol = length(cell_lines)))
+colnames(my.data)<- cell_lines
+rownames(my.data)<- unique.treatments_dose
+head(my.data)
+k=4
+# manually add data to my.data
+head(AUC.data.raw[[1]])
+ind <- match( rownames(my.data), AUC.data.raw[[1]]$treatment_dose)
+my.data[  , "srxn1_"] <- AUC.data.raw[[1]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[2]])
+ind <- match( rownames(my.data), AUC.data.raw[[2]]$treatment_dose)
+my.data[  , "p21_"] <- AUC.data.raw[[2]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[3]])
+ind <- match( rownames(my.data), AUC.data.raw[[3]]$treatment_dose)
+my.data[  , "BiP_"] <- AUC.data.raw[[3]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[4]])
+ind <- match( rownames(my.data), AUC.data.raw[[4]]$treatment_dose)
+my.data[  , "chop_"] <- AUC.data.raw[[4]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[5-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[5-k]]$treatment_dose)
+my.data[  , "btg2"] <- AUC.data.raw[[5-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[6-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[6-k]]$treatment_dose)
+my.data[  , "keap1"] <- AUC.data.raw[[6-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[7-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[7-k]]$treatment_dose)
+my.data[  , "p21"] <- AUC.data.raw[[7-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[8-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[8-k]]$treatment_dose)
+my.data[  , "tp53bp1"] <- AUC.data.raw[[8-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[9-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[9-k]]$treatment_dose)
+my.data[  , "nrf2"] <- AUC.data.raw[[9-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[10-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[10-k]]$treatment_dose)
+my.data[  , "xbp1"] <- AUC.data.raw[[10-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[11-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[11-k]]$treatment_dose)
+my.data[  , "p53"] <- AUC.data.raw[[11-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[12-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[12-k]]$treatment_dose)
+my.data[  , "srxn1"] <- AUC.data.raw[[12-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[13-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[13-k]]$treatment_dose)
+my.data[  , "chop"] <- AUC.data.raw[[13-k]][  ind,"meanAUC"]
+
+head(AUC.data.raw[[14-k]])
+ind <- match( rownames(my.data), AUC.data.raw[[14-k]]$treatment_dose)
+my.data[  , "BiP"] <- AUC.data.raw[[14-k]][  ind,"meanAUC"]
+
+# veranderen voor POC:
+
+indNot <- rownames(my.data) == "CDDO_0.0125"
+indGood <- rownames(my.data) == "CDDO_0.0075"
+my.data[indGood, !is.na(my.data[ indNot, ])] <- my.data[ indNot, !is.na(my.data[ indNot, ]) ]
+my.data<- my.data[ !indNot,  ]
+
+indNot <- rownames(my.data) == "CDDO_0.025"
+indGood <- rownames(my.data) == "CDDO_0.015"
+my.data[indGood, !is.na(my.data[ indNot, ])] <- my.data[ indNot, !is.na(my.data[ indNot, ]) ]
+my.data<- my.data[ !indNot,  ]
+
+indNot <- rownames(my.data) == "CDDO_0.05"
+indGood <- rownames(my.data) == "CDDO_0.03"
+my.data[indGood, !is.na(my.data[ indNot, ])] <- my.data[ indNot, !is.na(my.data[ indNot, ]) ]
+my.data<- my.data[ !indNot,  ]
+
+indNot <- rownames(my.data) == "Menadione_2.5"
+indGood <- rownames(my.data) == "Menadione_20"
+my.data[indGood, !is.na(my.data[ indNot, ])] <- my.data[ indNot, !is.na(my.data[ indNot, ]) ]
+my.data<- my.data[ !indNot,  ]
+# 
+# Menadione_2.5 moet 20 zijn
+# 
+# 
+# goed:
+# CDDO_0.03
+# CDDO_0.015
+# CDDO_0.0075
+# 
+# niet goed:
+# CDDO_0.05
+# CDDO_0.025
+# CDDO 0.0125
+
+
+# First normalize columns then merge DILI & POC. Add the DILI on top of the POC (pos controls of DILI replace POC)
+#my.data<- scale(my.data)
+#my.data<- as.data.frame(my.data)
+
+minmaxFun <- function(x) { 
+                          min_e = min(x, na.rm = TRUE)
+                          max_e = max(x, na.rm = TRUE)
+                          y <- (x - min_e) / (max_e - min_e)
+                          y
+                          }
+  norm.my.data <- lapply(my.data, minmaxFun)
+norm.my.data<- do.call('cbind', norm.my.data)
+rownames(norm.my.data) <- rownames(my.data)
+norm.my.data <-as.data.frame(norm.my.data)
+head(norm.my.data)
+?lapply
+
+ind <- !is.na(norm.my.data$srxn1_)
+  norm.my.data$srxn1[ind] <- norm.my.data$srxn1_[ind]
+
+ind <- !is.na(norm.my.data$p21_)
+  norm.my.data$p21[ind] <- norm.my.data$p21_[ind]
+
+ind <- !is.na(norm.my.data$BiP_)
+  norm.my.data$BiP[ind] <- norm.my.data$BiP_[ind]
+
+ind <- !is.na(norm.my.data$chop_)
+  norm.my.data$chop[ind] <- norm.my.data$chop_[ind]
+norm.my.data <- norm.my.data[, -(1:4)]
+
+
+# define annotations treatment and reporter types:
+
+
+
+# heatmap time!
+
+reporter_type <- c("light blue", "darkred", "green")
+treatment_type <- c( "orange","pink", "green", "light blue","darkred")
+
+names(reporter_type) <- c("ox_stress", "DDR", "ER_stress")
+names(treatment_type) <-  c("DILI", "control", "ER_stress", "ox_stress", "DDR")
+
+
+
+
+
+bkupd <- norm.my.data
+head(norm.my.data)
+
+#norm.my.data<-bkupd
+#'correlation', 'pearson', 'kendall', 'spearman', 'euclidean', 'maximum', 'manhattan', 'canberra', 'binary', 'minkowski'
+#'ward', 'single', 'complete', 'average', 'mcquitty', 'median', 'centroid'
+
+#savePath <- "C:/Users/winks/Documents/own papers/NFKB Nrf2 Bram/figures/heatmaps both tp"
+#?dist
+#?aheatmap
+#?hclust
+
+head(norm.my.data)
+# for clustering insert mean values at NA locations, store NA/indexes to put NA back after clustering
+indNA <- is.na(norm.my.data)
+mean.value<-mean(as.matrix(norm.my.data),na.rm=TRUE) 
+norm.my.data[ indNA ] <- mean.value
+
+diss.data <- dist(norm.my.data, method = "euclidean")
+clust.data <- hclust(diss.data, method = "ward.D", members = NULL)
+rowInd<- clust.data[["order"]]
+# redo for columns
+diss.data <- dist(t(norm.my.data), method = "euclidean")
+clust.data <- hclust(diss.data, method = "ward.D", members = NULL)
+colInd<- clust.data[["order"]]
+# put back NA's
+norm.my.data[indNA] <- NA
+  ordered.norm.my.data<- norm.my.data[ rowInd, colInd]
+
+
+treatmentAnot <- read.table(file = "C:/Users/winks/Documents/treatmentAnot.txt", sep ="\t", header = TRUE)
+#treatmentAnot[ treatmentAnot$type == "DILI", "type"] <- "ox_stress"
+
+treatmentAnot <- rbind(treatmentAnot,data.frame(treatment = "DMSO_0", type = "control" ))
+
+                       
+
+treatmentAnot<- treatmentAnot[ treatmentAnot$treatment %in% rownames(my.data), ]
+colnames(treatmentAnot)<-c("treatment", "treatment_type")
+treatmentAnot[ treatmentAnot$treatment == "diethyl maleate_1500", "treatment_type"] <- "ox_stress"
+
+# put treatmentAnot in correct order
+ind <- match( rownames(ordered.norm.my.data),treatmentAnot$treatment)
+
+
+treatmentAnot <- treatmentAnot[ ind, ]
+
+treatmentAnot <- as.data.frame(treatmentAnot$treatment_type)
+colnames(treatmentAnot)<- "treatment_type"
+
+
+reporterAnot <- data.frame(reporter = c("srxn1","keap1","nrf2","tp53bp1", "p53", "p21", "btg2","xbp1","BiP","chop"),
+                           reporter_type = c("ox_stress", "ox_stress", "ox_stress", "DDR", "DDR", "DDR", "DDR", 
+                                             "ER_stress","ER_stress","ER_stress"))
+
+reporterAnot <- data.frame(reporter = c("srxn1","BiP", "p21" ,"chop"),
+                           reporter_type = c("ox_stress", "ER_stress", "DDR", "ER_stress"))
+
+
+colnames(ordered.norm.my.data) <- gsub("_", "", colnames(ordered.norm.my.data))
+ind<- match(colnames(ordered.norm.my.data), reporterAnot$reporter)
+reporterAnot
+reporterAnot$reporter_type<- reporterAnot$reporter_type[ind]
+
+reporterAnot<- as.data.frame(reporterAnot$reporter_type)
+
+colnames(reporterAnot)  <- "reporter_type"
+my.colors <- c( "#ffffb2", "#fed976", "#feb24c", "#fd8d3c", "#f03b20", "#bd0026")
+hist(rep(1:10, 10), col =my.colors)
+
+length(my.colors) 
+
+
+myColors <- list(reporter_type = reporter_type, treatment_type = treatment_type)
+
+
+colBreaks <-c(seq(-0.1, 0.1,length.out=20), seq(0.101,1.01, length.out = 31))
+length(colBreaks)
+ordered.norm.my.data <- ordered.norm.my.data[ rownames(ordered.norm.my.data) != "cyclosporine A_6", ]
+ordered.norm.my.data <- ordered.norm.my.data[ rownames(ordered.norm.my.data) != "iodoacetamide _10", ]
+ordered.norm.my.data [ is.na(ordered.norm.my.data) ] <- c(mean(as.matrix(ordered.norm.my.data),na.rm=T), c(mean(as.matrix(ordered.norm.my.data),na.rm=T)))
+ordered.norm.my.data  <- ordered.norm.my.data [ !rownames(ordered.norm.my.data ) %in% c("Cyclosporine A_6", "Cisplatin_20"), ]
+
+
+
+#large.value <- 2*max(my.data, na.rm= TRUE)
+# For missing values the data is first clustered then the heatmap is drawn without clustering/ordering
+aheatmap(as.matrix((ordered.norm.my.data)), Rowv = NA, Colv=NA, 
+         annCol = reporterAnot, annRow = treatmentAnot,  breaks = colBreaks,color = my.colors,
+         annColors = myColors,  fontsize = 8, width = 10, height=10, legend = FALSE
+  )
+
+
+head(ordered.norm.my.data)
+distfun = "correlation",
+ hclustfun = "ward"
+my.data[ rownames(my.data)=="Tacrine_80",]
+
+
+
+
+
+
+
+
+
+# old code starts here
+#Srxn1:
+
+AUC_Srxn1 <- read.delim(file = "/media/Image Data/POC/2012_12_06/TIFs/output/2012_12_06 myData_AUC.csv", sep =",", header = T, row.names=1)
+summ_Srxn1 <- read.delim(file = "/media/Image Data/POC/2012_12_06/TIFs/output/2012_12_06 myData_summarized.csv", sep = ",", header = T, row.names = 1)
+AUC_Srxn1$cell <- "Srxn1"
+summ_Srxn1$cell <- "Srxn1"
+
+AUC_DDIT3 <- read.delim(file = "/media/Image Data/POC/2013_01_16/TIFs/output/DDIT3/2013_01_16 myData_AUC.csv", sep =",", header = T, row.names=1)
+summ_DDIT3 <- read.delim(file = "/media/Image Data/POC/2013_01_16/TIFs/output/DDIT3/2013_01_16 myData_summarized.csv", sep = ",", header = T, row.names = 1)
+AUC_DDIT3$cell <- "DDIT3"
+summ_DDIT3$cell <- "DDIT3"
+
+AUC_HSPA5 <- read.delim(file = "/media/Image Data/POC/2013_01_16/TIFs/output/HSPA5/2013_01_16 myData_AUC.csv", sep =",", header = T, row.names=1)
+summ_HSPA5 <- read.delim(file = "/media/Image Data/POC/2013_01_16/TIFs/output/HSPA5/2013_01_16 myData_summarized.csv", sep = ",", header = T, row.names = 1)
+AUC_HSPA5$cell <-"HSPA5"
+summ_HSPA5$cell <- "HSPA5"
+
+AUC_NFE2L2 <- read.delim(file = "/media/Image Data/POC/2013_01_16/TIFs/output/NFE2L2/2013_01_16 myData_AUC.csv", sep =",", header = T, row.names=1)
+summ_NFE2L2 <- read.delim(file = "/media/Image Data/POC/2013_01_16/TIFs/output/NFE2L2/2013_01_16 myData_summarized.csv", sep = ",", header = T, row.names = 1)
+AUC_NFE2L2$cell <- "NFE2L2"
+summ_NFE2L2$cell <- "NFE2L2" 
+
+AUC_XBP1 <- read.delim(file = "/media/Image Data/POC/2013_01_16/TIFs/output/XBP1/2013_01_16 myData_AUC.csv", sep =",", header = T, row.names=1)
+summ_XBP1 <- read.delim(file = "/media/Image Data/POC/2013_01_16/TIFs/output/XBP1/2013_01_16 myData_summarized.csv", sep = ",", header = T, row.names = 1)
+AUC_XBP1$cell<- "XBP1"
+summ_XBP1$cell <-"XBP1"
+
+AUC_ATF4 <- read.delim(file = "/media/Image Data/POC/2012_12_10 part 1/tiffs_wells/output/ATF4/2012_12_10 myData_AUC.csv", sep =",", header = T, row.names=1)
+summ_ATF4 <- read.delim(file = "/media/Image Data/POC/2012_12_10 part 1/tiffs_wells/output/ATF4/2012_12_10 myData_summarized.csv", sep = ",", header = T, row.names = 1)
+AUC_ATF4$cell<- "ATF4"
+summ_ATF4$cell <-"ATF4"
+
+AUC_TP53 <- read.delim(file = "/media/Image Data/POC/2012_12_10 part 1/tiffs_wells/output/TP53/2012_12_10 myData_AUC.csv", sep =",", header = T, row.names=1)
+summ_TP53 <- read.delim(file = "/media/Image Data/POC/2012_12_10 part 1/tiffs_wells/output/TP53/2012_12_10 myData_summarized.csv", sep = ",", header = T, row.names = 1)
+AUC_TP53$cell<- "TP53"
+summ_TP53$cell <-"TP53"
+
+# normalize data: scale the data according to positive control: this way the responses are scaled to each other
+ind <- grep("deox" , AUC_Srxn1$treatment, ignore.case = TRUE )
+AUC_Srxn1 <- AUC_Srxn1[-ind,]
+
+ind <- grep("deox" , summ_Srxn1$treatment, ignore.case = TRUE )
+summ_Srxn1[ind,]
+summ_Srxn1 <- summ_Srxn1[-ind,]
+
+
+#AUC_Srxn1_m <-  max(AUC_Srxn1$AUC)
+#AUC_Srxn1$AUC <- AUC_Srxn1$AUC * (1 /  (100*AUC_Srxn1_m))
+max(AUC_Srxn1$AUC)
+
+ind <- grep("deox", AUC_DDIT3$treatment, ignore.case = TRUE )
+AUC_DDIT3 <- AUC_DDIT3[-ind,]
+#AUC_DDIT3_m <- max(AUC_DDIT3$AUC)
+#AUC_DDIT3$AUC <- AUC_DDIT3$AUC * (1 / (100*AUC_DDIT3_m))
+max(AUC_DDIT3$AUC)
+
+ind <- grep("deox", AUC_HSPA5$treatment, ignore.case = TRUE )
+AUC_HSPA5 <- AUC_HSPA5[-ind,]
+#AUC_HSPA5_m <- max(AUC_HSPA5$AUC)
+#AUC_HSPA5$AUC <- AUC_HSPA5$AUC * (1 / (100*AUC_HSPA5_m))
+max(AUC_HSPA5$AUC)
+
+ind <- grep("deox" , summ_HSPA5$treatment, ignore.case = TRUE )
+summ_HSPA5[ind,]
+summ_HSPA5 <- summ_HSPA5[-ind,]
+
+
+
+
+ind <- grep("deox", AUC_NFE2L2$treatment, ignore.case = TRUE )
+AUC_NFE2L2 <- AUC_NFE2L2[-ind,]
+#AUC_NFE2L2_m <- max(AUC_NFE2L2$AUC)
+#AUC_NFE2L2$AUC <- AUC_NFE2L2$AUC * (1 / (100*AUC_NFE2L2_m))
+max(AUC_NFE2L2$AUC)
+
+ind <- grep("deox", AUC_XBP1$treatment, ignore.case = TRUE )
+AUC_XBP1 <- AUC_XBP1[-ind,]
+#AUC_XBP1_m <- max(AUC_XBP1$AUC)
+#AUC_XBP1$AUC <- AUC_XBP1$AUC * (1 / (100*AUC_XBP1_m))
+max(AUC_XBP1$AUC)
+
+ind <- grep("deox", AUC_ATF4$treatment, ignore.case = TRUE )
+AUC_ATF4 <- AUC_ATF4[-ind,]
+#AUC_ATF4_m <- max(AUC_ATF4$AUC)
+#AUC_ATF4$AUC <- AUC_ATF4$AUC * (1 / (100*AUC_ATF4_m))
+max(AUC_ATF4$AUC)
+
+ind <- grep("deox", AUC_TP53$treatment, ignore.case = TRUE )
+AUC_TP53 <- AUC_TP53[-ind,]
+#AUC_TP53_m <- max(AUC_TP53$AUC)
+#AUC_TP53$AUC <- AUC_TP53$AUC * (1 / (100*AUC_TP53_m))
+max(AUC_TP53$AUC)
+
+ind <- grep("deox" , summ_TP53$treatment, ignore.case = TRUE )
+summ_TP53[ind,]
+summ_TP53 <- summ_TP53[-ind,]
+
+
+
+# plot heatmap
+myData_AUC <- rbind(AUC_Srxn1, AUC_DDIT3, AUC_HSPA5, AUC_NFE2L2, AUC_XBP1, AUC_ATF4, AUC_TP53)
+
+colnames(summ_Srxn1)[5] <-"Intensity"
+colnames(summ_HSPA5)[5] <-"Intensity"
+colnames(summ_TP53)[5] <-"Intensity"
+myData_summ <- rbind( summ_Srxn1, summ_HSPA5, summ_TP53)
+head(myData_summ)
+colnames(myData_summ)[6] <- "Cell_Line"
+
+colnames(myData_AUC)[3] <- "Cell_Line"
+# myData_AUC$Stress_Response <- NA
+# myData_AUC$Stress_Response[ myData_AUC$Cell_Line == "TP53"] <- "DDR"
+# myData_AUC$Stress_Response[ myData_AUC$Cell_Line == "Srxn1"] <- "OS"
+# myData_AUC$Stress_Response[ myData_AUC$Cell_Line == "NFE2L2"] <- "OS"
+# myData_AUC$Stress_Response[ myData_AUC$Cell_Line == "DDIT3"] <- "ER-stress"
+# myData_AUC$Stress_Response[ myData_AUC$Cell_Line == "HSPA5"] <- "ER-stress"
+# myData_AUC$Stress_Response[ myData_AUC$Cell_Line == "XBP1"] <- "ER-stress"
+# myData_AUC$Stress_Response[ myData_AUC$Cell_Line == "ATF4"] <- "ER-stress"
+
+
+myData_AUC$Compound_Type <- NA
+myComps<-unique(myData_AUC$treatment)
+myComps
+ind <- grep( "CDDO" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "OS"
+ind <- grep( "DEM" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "OS"
+ind <- grep( "IAA" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "OS"
+ind <- grep( "menadio" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "OS"
+ind <- grep( "H2O2" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "OS"
+
+
+ind <- grep( "BFA" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "ER-stress"
+ind <- grep( "tunica" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "ER-stress"
+ind <- grep( "thapsi" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "ER-stress"
+
+ind <- grep( "cispl" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "DDR"
+ind <- grep( "etop" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "DDR"
+
+ind <- grep( "DMSO" ,myData_AUC$treatment, ignore.case = TRUE ) 
+myData_AUC[ind,]
+myData_AUC$Compound_Type[ind ] <- "vehicle"
+
+
+
+myData_AUC$Compound_Type[is.na(myData_AUC$Compound_Type)] <- "other"
+
+myData_AUC$Compound_Type <- factor(myData_AUC$Compound_Type)
+ 
+
+
+head(myData_AUC)
+
+myData_AUC <- myData_AUC[ myData_AUC$treatment != "Menadione H", ]
+myData_AUC <- myData_AUC[ myData_AUC$treatment != "Menadione M", ]
+myData_AUC <- myData_AUC[ myData_AUC$treatment != "DMSO 75 %", ]
+
+myData_summ <- myData_summ[ myData_summ$treatment != "Menadione H", ]
+myData_summ <- myData_summ[ myData_summ$treatment != "Menadione M", ]
+myData_summ <- myData_summ[ myData_summ$treatment != "DMSO 75 %", ]
+
+
+
+
+AUC_Srxn1
+AUC_DDIT3
+AUC_HSPA5
+AUC_NFE2L2
+AUC_XBP1
+AUC_ATF4
+AUC_TP53
+Srxn1 <- myData_AUC[ myData_AUC$Cell_Line=="Srxn1", c("treatment","AUC")]
+DDIT3 <- myData_AUC[ myData_AUC$Cell_Line=="DDIT3", c("treatment","AUC")]
+HSPA5 <- myData_AUC[ myData_AUC$Cell_Line=="HSPA5", c("treatment","AUC")]
+NFE2L2 <- myData_AUC[ myData_AUC$Cell_Line=="NFE2L2", c("treatment","AUC")]
+XBP1 <- myData_AUC[ myData_AUC$Cell_Line=="XBP1", c("treatment","AUC")]
+ATF4 <- myData_AUC[ myData_AUC$Cell_Line=="ATF4", c("treatment","AUC")]
+TP53 <- myData_AUC[ myData_AUC$Cell_Line=="TP53", c("treatment","AUC")]
+
+myData_AUC_q <- cbind(Srxn1, DDIT3, HSPA5, NFE2L2, XBP1, ATF4, TP53)
+
+rownames(myData_AUC_q) <- myData_AUC_q[,13]
+myData_AUC_q <- myData_AUC_q[,-c(1,3,5,7,9,11,13)] 
+colnames(myData_AUC_q ) <- c("Srxn1", "DDIT3", "HSPA5", "NFE2L2", "XBP1", "ATF4", "TP53")
+
+
+
+
+Compound_Type <- c( "darkred", "limegreen", "blue", "pink", "lightblue")
+names(Compound_Type) <- c("DDR", "ER-stress", "OS", "other", "vehicle")
+myColors <- list(Compound_Type = Compound_Type)
+
+zehDist <- c("manhattan","correlation", "euclidean")[3]
+zehClust <- c("single" , "average", "ward", "complete", "centroid")[2]
+
+ means.col <-  unlist(lapply(myData_AUC_q,  mean ))
+  means.sd <-  unlist(lapply(myData_AUC_q,  sd ))
+myData_AUC_q_n <-myData_AUC_q
+head(myData_AUC_q_n)
+myData_AUC_q_n$Srxn1 <-  (myData_AUC_q$Srxn1 - as.numeric(means.col["Srxn1"]) )/ as.numeric(means.sd["Srxn1"])
+myData_AUC_q_n$DDIT3 <-  (myData_AUC_q$DDIT3 - means.col["DDIT3"]) / means.sd["DDIT3"]
+myData_AUC_q_n$HSPA5 <-  (myData_AUC_q$HSPA5 - means.col["HSPA5"]) / means.sd["HSPA5"]
+myData_AUC_q_n$NFE2L2 <-  (myData_AUC_q$NFE2L2 - means.col["NFE2L2"]) / means.sd["NFE2L2"]
+myData_AUC_q_n$XBP1 <-  (myData_AUC_q$XBP1 - means.col["XBP1"]) / means.sd["XBP1"]
+myData_AUC_q_n$ATF4 <-  (myData_AUC_q$ATF4 - means.col["ATF4"]) / means.sd["ATF4"]
+myData_AUC_q_n$TP53 <-  (myData_AUC_q$TP53 - means.col["TP53"]) / means.sd["TP53"]
+
+
+
+head(myData_AUC_q_n)
+
+
+
+min(myData_AUC_q_n)
+
+hmcols<-colorRampPalette(c("white","blue"))(256)
+
+white <- hmcols[1]
+lightestBlue <-hmcols[30]
+lightBlue <- hmcols[80]
+blue <- hmcols[128]
+darkBlue <- hmcols[156]
+darkerBlue <- hmcols[180]
+darkestBlue <-hmcols[256]
+
+my.seq<-seq(min(myData_AUC_q_n),max(myData_AUC_q_n), length.out=8)
+
+Breakwhite <- my.seq[2]
+BreaklightestBlue <- my.seq[3]
+BreaklightBlue<- my.seq[4]
+Breakblue <-  my.seq[5]
+BreakdarkBlue <- my.seq[6]
+BreakdarkerBlue <- my.seq[7]
+BreakdArkestBlue <- my.seq[8]
+
+
+
+  myBreaks <-c( Breakwhite, BreaklightestBlue, BreaklightBlue, Breakblue, BreakdarkBlue, BreakdarkerBlue, BreakdArkestBlue) 
+
+
+color_palette <- c(white, lightestBlue, lightBlue, blue, darkBlue, darkerBlue, darkestBlue)
+
+# set up myAnot data and quantitative data
+
+
+
+head(myData_AUC)
+myAnot <- data.frame( treatment = myData_AUC$treatment[ myData_AUC$Cell_Line=="TP53"], Compound_Type = myData_AUC$Compound_Type[ myData_AUC$Cell_Line == "TP53"  ])
+rownames(myAnot) <- myAnot$treatment
+myAnot$treatment <- NULL
+head(myAnot)
+
+sum(rownames(myAnot) != rownames(myData_AUC_q))
+
+fontsize_row = 8; fontsize_col = 6;
+pheatmap(t(as.matrix(myData_AUC_q_n)), col= color_palette, breaks =  myBreaks , main= "Specificity of Adaptive stress response Reporters",  
+         fontsize_row=fontsize_row, fontsize_col =fontsize_col, border_color=NA, scale = "row",
+         cluster_rows = TRUE, cluster_cols = TRUE, clustering_distance_rows = zehDist, 
+         clustering_method = zehClust,  
+          legend = TRUE, fontsize = 4,
+          legend_breaks = round(myBreaks, digits=1), 
+         annotation = myAnot, annotation_colors = myColors,
+          display_numbers = F )
+
+
+
+
+
+
+  
+  
+  #plot xy plots overlayed
+head(myData_summ)
+sum.means <- ddply(myData_summ, .(Cell_Line), function(x) mean(x$Intensity))
+sum.sd <- ddply(myData_summ, .(Cell_Line), function(x) sd(x$Intensity))
+
+myData_summ$Intensity[ myData_summ$Cell_Line=="Srxn1"] <- (myData_summ$Intensity[ myData_summ$Cell_Line=="Srxn1"] -
+  sum.means$V1[ sum.means$Cell_Line == "Srxn1"]) /  sum.sd$V1[ sum.sd$Cell_Line == "Srxn1"]
+
+myData_summ$Intensity[ myData_summ$Cell_Line=="HSPA5"] <- (myData_summ$Intensity[ myData_summ$Cell_Line=="HSPA5"] -
+  sum.means$V1[ sum.means$Cell_Line == "HSPA5"]) /  sum.sd$V1[ sum.sd$Cell_Line == "HSPA5"]
+
+myData_summ$Intensity[ myData_summ$Cell_Line=="TP53"] <- (myData_summ$Intensity[ myData_summ$Cell_Line=="TP53"] -
+  sum.means$V1[ sum.means$Cell_Line == "TP53"]) /  sum.sd$V1[ sum.sd$Cell_Line == "TP53"]
+
+#tijd van HSPA5 klopt niet
+myData_summ$timeAfterExposure[ myData_summ$Cell_Line=="HSPA5"] <- myData_summ$timeAfterExposure[ myData_summ$Cell_Line=="HSPA5"] / 2
+
+unique(myData_summ$treatment)
+
+p<- ggplot( data = myData_summ, group = Cell_Line,  aes( x = timeAfterExposure , y = Intensity,  linetype = "Cell_Line", color = Cell_Line)) + geom_point(symbol =".", size = 1 ) 
+
+p <- p + facet_wrap(~ treatment )
+p <- p + theme( axis.text.x = element_text(angle = 90, hjust = 1, size = 14, colour = "grey50") ) + 
+theme( strip.text.x = element_text( size = 14)) 
+ p 
+ 
+
+
+
+
+
+
+
+
+
+
+
+```

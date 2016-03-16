@@ -1,0 +1,242 @@
+
+========================================================
+
+# this script pulls out analyzed TGGATES data
+
+# unfiltered: all genes are left in dataset
+# DEG: background and other filtering of genes occured (most significant genes)
+
+```{r}
+rm(list=ls())
+setwd("H:/test Gerhard") # set wording directory to where results should be stored
+
+#require(rat2302rnentrezg.db)
+#require()
+
+library(stringr)
+library(ggplot2)
+
+
+myPath <- "D:/R_HOME/R_WORK/mArray BAC reporter studie/results/unfiltered fold changes brainarray/PHH" # choose data set
+my.time <- str_match(naampje, "_[0-9]{1,2}hr_")[1] # day_  #hr_  #  # is it in vivo or in vitro part
+
+savePath <-getwd() # 
+myFolders <- paste( myPath,dir( myPath ) , sep = "/" )
+dir(myPath)
+# gene set:
+#gene.list.rd <- read.delim(
+#  file= "D:/POC/POC meta analyse/full/figure 4/POC bacs rat.txt", sep ="\t", header = F)
+#head(gene.list.rd)
+
+dir()
+#gene.list <- gene.list.rd[, "V2", drop =F]
+gene.list <- c("140809", "1026", "1649") # genes of interest, entrez gene ids. 
+  #read.table(file = "rat_orth.txt", sep = "\t" ) # if alot use a text file
+  #gene.list.rd[ gene.list.rd$type=="inflammatory",5]
+#gene.list <- gene.list$rgd_symbol
+head(gene.list)
+length(gene.list) == length(unique(gene.list))
+gene.list <- unique(gene.list)
+gene.list<- as.character(gene.list)
+#gene.list <- data.frame(V1=c( 55332))
+
+
+head(gene.list)
+
+# load all the data in 1 table
+my.list = list()
+n<-0
+for (j in 1 : length(myFolders))
+  {
+
+  myFiles <-  dir(myFolders[j])
+
+  for (i in 1: length( myFiles )) 
+  {
+  n <- n + 1
+  
+  buffer <- read.table( paste(myFolders[j], "/", myFiles[ i ], sep = ""), sep = ",", row.names = 1, header = TRUE )
+  colnames(buffer)[colnames(buffer) == "entrez_ID"] <- "ENTREZID"
+
+  zehGenesIndexes<-   buffer$ENTREZID %in%  gene.list
+  zehGeneListPerCompound<-buffer[ zehGenesIndexes, ]
+  
+  naampje <- myFiles[i]
+  naampje <- gsub("_rma_NF_.csv", "", naampje )
+  my.dose <- str_match(naampje, "(_[HLMighowidle]{3,}_)"  )[1]
+  my.dose <- gsub("_","", my.dose)
+  #my.time <- str_match(naampje, "_[0-9]{1,2}hr_")[1] # day_  #hr_  # 
+  my.time <- gsub("_","",my.time)
+  my.treatment <- str_match(naampje,  "^([^_]*)")[1]
+  
+  zehGeneListPerCompound$dose <- my.dose
+  zehGeneListPerCompound$time <- my.time
+  zehGeneListPerCompound$treatment <- my.treatment
+  head(zehGeneListPerCompound)
+  my.list[[n]] <-  zehGeneListPerCompound
+  rm("zehGeneListPerCompound","buffer", "zehGenesIndexes", "naampje", "my.dose", "my.time","my.treatment")
+ print(paste("i is ", i, "j is ", j))
+    }
+}
+
+
+output.df <- do.call('rbind', my.list)
+
+setwd(savePath)
+getwd()
+output.df <- output.df[ !is.na(output.df$ENTREZID), ]
+write.table(output.df, file = "DILI paper 3 genes.txt", sep ="\t",  row.names= T)
+
+#### stop hier als geen plotjes wil
+
+
+ output.df$dosetime <- paste(output.df$dose, output.df$time)
+ output.df$dosetime<-factor(output.df$dosetime)
+ output.df$treatment <- factor(output.df$treatment)
+# 
+ gene.list <- unique(output.df$ENTREZID)
+# 
+ head(output.df)
+
+
+
+for ( j in 1 : length(gene.list) )
+  {
+ 
+  myGene <- output.df[output.df$ENTREZID == gene.list[ j ], ] 
+pdf( paste(unique(myGene$symbols),"rat_single.pdf", sep = "_"), height = 40, width = 20  )
+  
+  head(myGene)
+myGene$trick <- paste(myGene$treatment, myGene$dosetime)
+                                                        
+myGene$trick <- gsub("High 24hr", "H24", myGene$trick)
+  myGene$trick <- gsub("High 8hr", "H8", myGene$trick)
+  myGene$trick <- gsub("High 2hr", "H2", myGene$trick)
+  myGene$trick <- gsub("Middle 24hr", "M24", myGene$trick)
+  myGene$trick <- gsub("Middle 8hr", "M8", myGene$trick)
+  myGene$trick <- gsub("Middle 2hr", "M2", myGene$trick)
+  myGene$trick <- gsub("Low 24hr", "L24", myGene$trick)
+  myGene$trick <- gsub("Low 8hr", "L8", myGene$trick)
+  myGene$trick <- gsub("Low 2hr", "L2", myGene$trick)
+
+
+myGene$trick <- gsub("High 9hr", "H9", myGene$trick)
+  myGene$trick <- gsub("High 6hr", "H6", myGene$trick)
+  myGene$trick <- gsub("High 3hr", "H3", myGene$trick)
+  myGene$trick <- gsub("Middle 9hr", "M9", myGene$trick)
+  myGene$trick <- gsub("Middle 6hr", "M6", myGene$trick)
+  myGene$trick <- gsub("Middle 3hr", "M3", myGene$trick)
+  myGene$trick <- gsub("Low 9hr", "L9", myGene$trick)
+  myGene$trick <- gsub("Low 6hr", "L6", myGene$trick)
+  myGene$trick <- gsub("Low 3hr", "L4", myGene$trick)
+
+
+myGene$trick <- gsub("high 4 day", "H4d", myGene$trick)
+  myGene$trick <- gsub("high 8 day", "H8d", myGene$trick)
+  myGene$trick <- gsub("high 15 day", "H15d", myGene$trick)
+  myGene$trick <- gsub("high 29 day", "H29d", myGene$trick)
+  myGene$trick <- gsub("low 4 day", "L4d", myGene$trick)
+  myGene$trick <- gsub("low 8 day", "L8d", myGene$trick)
+  myGene$trick <- gsub("low 15 day", "L15d", myGene$trick)
+  myGene$trick <- gsub("low 29 day", "L29d", myGene$trick)
+  myGene$trick <- gsub("middle 4 day", "M4d", myGene$trick)
+myGene$trick <- gsub("middle 8 day", "M8d", myGene$trick)
+myGene$trick <- gsub("middle 15 day", "M15d", myGene$trick)
+myGene$trick <- gsub("middle 29 day", "M29d", myGene$trick)
+
+
+
+myGene$trick <- factor(myGene$trick)
+ordered<-within(myGene, { trick <- reorder(trick, logFC )
+                          })
+position=position_dodge()
+
+base <- ggplot(data=ordered, aes(x=trick, y=logFC)) + 
+    geom_bar(
+             size=0.3, stat="identity") +
+      facet_wrap( ~dosetime , ncol=1, scales = "free_x") 
+
+
+cbbPalette <- c("#0072B2", "#000000", "#AA00FFFF", "#D55E00", "#56B4E9", "#009E73", "#F0E442", "#CC79A7", "#E69F00", "darkgreen", "pink")
+
+
+my.title <- unique(as.character(myGene$symbols))
+
+base <- base +  xlab("DILI Compounds") + labs(y=expression(log[2](FC) ) ) + # Set axis labels
+    ggtitle(paste ( my.title, sep = "-" )  )   # Set title
+      
+base <-  base + theme(axis.text.x = element_text( angle = 90, hjust = 1, vjust =0.5, size = 10, colour = "grey50"))  
+
+
+print(base)
+
+
+rm("myGene", "ordered")
+ 
+  print(paste("compound printed to file: ", my.title))
+
+dev.off()
+}
+
+
+
+# #       
+
+
+
+
+
+```
+
+
+
+wide format
+```{r }
+getwd()
+m.data <- read.delim("rat_invivo_liver_repeated.txt", sep = "\t", header = T)
+#m.data <- output.df
+dir()
+head(m.data)
+
+m.data$treatment.dose.time <- paste(m.data$treatment, m.data$dose, m.data$time, sep =".")
+m.data.s <- m.data[, c("logFC","symbols","ENTREZID","treatment.dose.time")]
+head(m.data.s)
+
+m.data.s$probeID <- rownames(m.data.s)
+colnames(m.data.s)
+#install.packages("reshape")
+require(reshape)
+
+test <- cast(m.data.s,   symbols  ~  treatment.dose.time , value = "logFC" )
+
+test[1:10,1:5]
+colnames(test)
+dim(test)
+sum(is.na(test))
+
+
+
+
+#m.data.w <- reshape(m.data.s, v.names = c("treatment.dose.time" ),idvar ="ENTREZID", timevar="",  direction = "wide")
+write.table(test, file = "PRH_wide data format.txt", sep = "\t", col.names=NA)
+head(test)[,1:10]
+?cast
+
+?reshape
+
+dim(m.data.w)
+
+#selection wide format:
+indwide24H <- grep(".High.24hr", colnames(test))
+indwide8H <- grep(".High.8hr", colnames(test))
+colnames(test)
+data.24H <- test[,  indwide24H]
+rownames(data.24H) <- test[, 'symbols']
+data.8H <- test[, indwide8H]
+rownames(data.8H) <- test[, 'symbols']
+
+write.table(data.8H, file = "selection_8hours High dose.txt", sep = "\t", col.names=NA)
+head(data.24H)[,1:5]
+```
+
+

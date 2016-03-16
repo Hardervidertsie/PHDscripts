@@ -1,0 +1,472 @@
+7-jan-2015: generating expression fold changes from TGGATES mArrays for lists of gene sets
+-----------------------------------------
+
+TGP CELL files rat in vivo single: using Brainarray annotation and rma instead of bioconductor and vsnrma
+  
+  
+ HG-U133_Plus_2
+  
+```{r paths,  echo=TRUE, eval=TRUE, warning=TRUE}
+
+options(width= 180)
+rm(list=ls())
+require(rat2302rnentrezg.db)
+#source("http://bioconductor.org/biocLite.R")
+#biocLite(c("affy", "limma", "genefilter", "arrayQualityMetrics"))
+library(affy)
+library(limma)
+library(genefilter)
+library( arrayQualityMetrics )
+
+#set paths and get probe-list 
+pathMainFolder<-    "D:/micro array data TG-GATEs/rat in vivo kidney accute/extracted"
+celFileFolders<-dir(pathMainFolder);
+phenoFiles<-paste( file.path( pathMainFolder  ,celFileFolders), "/Attribute.tsv", sep="")
+celFileFoldersC<-paste( celFileFolders, '/celfiles', sep = "")
+# the paths where cell files reside, each folder contains cell files from 1 compound
+pathToCellFiles<- file.path( pathMainFolder, celFileFoldersC)
+
+# all celFiles (will need iterating over together with phenoFiles)
+celFiles<-dir(pathToCellFiles);
+
+length(celFiles);
+length(unique(celFiles));
+
+
+
+```
+
+
+
+
+
+```{r }
+
+
+savePath <- "D:/R_HOME/R_WORK/mArray BAC reporter studie/results/unfiltered fold changes brainarray/rat kidney single"
+savePathDEG <- "D:/R_HOME/R_WORK/mArray BAC reporter studie/results/DEGs/Rat in vivo kidney single brainarray"
+      #start loop i
+mehlijst =list()
+for ( i in 1 : length( celFileFolders)  ) {
+
+  pData<-read.delim(phenoFiles[ i ], sep="\t",  head=TRUE, colClasses= c("character",
+  "character", "character", "numeric", "numeric", "character", "character", "character", "character", "character",
+  "character", "character", "character", "character", "character", "character", "character", "character",
+	"numeric", "character", "character") );
+
+  #remove "No ChipData" rows and then use as rownames
+  pData <- pData[ pData$BARCODE != "No ChipData", ]
+  #removing redundant columns:
+rownames(pData) <- pData$BARCODE
+  pData<- pData[ , c("ARR_DESIGN","GROUP_ID","INDIVIDUAL_ID", "MATERIAL_ID", "COMPOUND_NAME", "COMPOUND.Abbr.", "COMPOUND_NO", "SPECIES", "TEST_TYPE", "SEX_TYPE", "SACRI_PERIOD", "DOSE", "DOSE_LEVEL" ) ]
+
+
+#remove the .CELL from sample names to be able to create Expression Set object (sampleNames == rownames(phenodata))
+
+celFile<-ReadAffy( celfile.path = pathToCellFiles[ i ], cdfname = "rat2302rnentrezgcdf"  );
+annotation(celFile)<-"rat2302rnentrezg.db"
+
+sampleNames(celFile)
+
+sNames<-sampleNames(celFile);
+sNoCell<- gsub(".CEL", "", sNames);
+sampleNames(celFile)<- sNoCell;
+sNames <- sampleNames(celFile)
+#So need to reorder phenoData
+print("order of samples in affy batch:")
+print(sNames)
+
+print("order of samples in pheno data:")
+print(rownames(pData))
+cbind(sNames, rownames(pData))
+if ((nchar(rownames(pData)) + 2)[1] == nchar(sNames)[1]){
+   rownames(pData) <- paste("00", rownames(pData), sep="")
+}
+  indexes<-match(sNames, rownames(pData))
+
+print(indexes)
+pData<-pData[indexes,]
+print("permutated order of phenodata to match affy batch sample order correct?:")
+print(cbind(sampleNames(celFile), rownames(pData), sNames==rownames(pData)))
+if ( !all(rownames(pData) == sampleNames(celFile ))  | length(rownames(pData)) != length(sampleNames(celFile)  ) )
+  {
+  stop("annotation error!")
+  }
+#now construct the expression set object with the pheno data attached
+
+phenoData( celFile )<- new("AnnotatedDataFrame", data = pData)
+
+#background subsraction, normalization, probe summarization  and fold changes
+#-----------------------
+
+#Bellow code block is the main chunk that process the raw data and saves the final fold changes of all data. starting for now with high dose 8h and high dose #24 hours
+myData_rma<-rma( celFile );
+
+
+compound <- pData$COMPOUND_NAME[1]
+intgroup = c("DOSE_LEVEL",  "SACRI_PERIOD")
+
+#arrayQualityMetrics( myData_rma, intgroup = intgroup, outdir = paste("D:/R_HOME/R_WORK/mArray BAC reporter studie/results/QC/QC rat in vivo repeat rma brainarray kidney", compound, sep ="/"),
+ #                    reporttitle = paste("raw arrayQualityMetrics report for ", compound )  ) 
+
+# filtering: set the var.filter on when performing analysis for DEG's
+myData_rmaFiltered <- nsFilter( myData_rma, var.filter = TRUE, IQR = 0.3,  remove.dupEntrez = TRUE, require.entrez=TRUE )
+  myData_rmaFiltered<- myData_rmaFiltered$eset
+  row.means <- rowMeans(exprs(myData_rmaFiltered))
+filter.threshold <- quantile(row.means, 0.3)
+myData_rmaFiltered_NR <- myData_rmaFiltered[row.means > filter.threshold, ]
+
+#Finding differentially expressed genes with moderated t statistic of linear model: limma
+#------------------------
+
+pasted<-gsub(" ", "", paste(phenoData(myData_rma)$DOSE_LEVEL, phenoData(myData_rma)$SACRI_PERIOD, sep = "_") )
+print("made sample names")
+print(pasted);
+
+ct<-factor(pasted)
+design<-model.matrix(~0+ct)
+colnames(design)<-levels(ct)
+
+fit_rma<-lmFit(myData_rmaFiltered_NR, design)
+fit_rma_notFiltered<-lmFit(myData_rma, design)
+
+# contrasts depend on which dose / time samples are available
+# High24h medium24h low24h High8h medium8h low8h high2h medium2h low2h
+
+#combinations (what sample combinations in TGP.Rmd:
+# [[1]]
+#  [1] "Low_3hr"     "Low_6hr"     "Low_9hr"     "Low_24hr"    "Middle_3hr"  "Middle_6hr"  "Middle_9hr"  "Middle_24hr" "High_3hr"    "High_6hr"    "High_9hr"    "High_24hr"  
+# 
+# [[2]]
+# [1] "Low_24hr"    "Middle_24hr" "High_24hr"  
+# 
+# [[3]]
+# [1] "Low_3hr"     "Low_6hr"     "Low_9hr"     "Low_24hr"    "Middle_3hr"  "Middle_6hr"  "Middle_9hr"  "Middle_24hr" 
+# 
+# [[4]]
+# [1] "Low_3hr"     "Low_6hr"     "Low_9hr"     "Low_24hr"    "Middle_6hr"  "Middle_9hr"  "Middle_24hr"
+# 
+# [[5]]
+# [1] "High_3hr"  "High_6hr"  "High_9hr"  "High_24hr"
+# 
+# 
+# 
+  if ( length(pasted) != length(rownames(pData( celFile ) ) ) )
+   {
+   stop("faulty length of pasted ")
+    }
+
+# limmaUsersGuide()
+# 
+#   Which genes respond differently over time in the mutant relative to the wild-type?
+# cont.dif <- makeContrasts(
+# Dif6hr =(mu.6hr-mu.0hr)-(wt.6hr-wt.0hr),
+# Dif24hr=(mu.24hr-mu.6hr)-(wt.24hr-wt.6hr),
+# levels=design)
+# fit2 <- contrasts.fit(fit, cont.dif)
+# fit2 <- eBayes(fit2)
+# topTableF(fit2, adjust="BH")
+
+  my.counter <- 0
+  
+if ( all(any(grepl("Control_4day", pasted)), any(grepl("Control_8day", pasted)),any(grepl("Control_15day", pasted)) ,
+         any(grepl("Control_29day", pasted)) , any(grepl("High_4day", pasted)) ,any(grepl("High_8day", pasted)) ,
+     any(grepl("High_15day", pasted)) , any(grepl("High_29day", pasted))) & length( unique( pasted) ) == 8  & length(unique(pasted[-(grep("Control", pasted)) ])) == 4 )
+  {
+  my.contrasts<- makeContrasts( High_29day-Control_29day, High_15day-Control_15day, High_8day-Control_8day,
+                             High_4day-Control_4day,
+                             levels = design);
+    contrastsTimeHighD <- makeContrasts(
+                                  Dif29dayHighD = ( High_29day - High_15day ) - ( Control_29day - Control_15day  ),
+                                  Dif15dayHighD = ( High_15day - High_8day ) - ( Control_15day - Control_8day  ),
+                                  Dif8dayHighD = ( High_8day - High_4day ) - ( Control_8day - Control_4day  ),
+                                             levels = design);
+     
+        fitTimeHighD <- contrasts.fit( fit_rma, contrastsTimeHighD )
+        fitTimeHighD2 <- eBayes( fitTimeHighD )
+            timeHighD <- topTable( fitTimeHighD2, adjust.method = "BH", sort = "F", n = Inf)
+              LimmaSyms<- mget(as.character( rownames(timeHighD )), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+                LimmaENTREZID<- mget(as.character( rownames(timeHighD)), rat2302rnentrezgENTREZID, ifnotfound = NA)
+                LimmaSyms<-unlist( LimmaSyms );
+                  LimmaENTREZID <- unlist(LimmaENTREZID)
+                  timeHighD$symbols <- LimmaSyms
+                  timeHighD$ENTREZID <- LimmaENTREZID
+            
+                    naampje<-celFile$COMPOUND_NAME[ 1 ]
+                        nnamm <- paste( naampje, "timeHighDose", sep = "_"  ) 
+                            finalName<-paste(nnamm, "rma",".csv", sep="_")
+                            write.table(file = paste(savePathDEG, finalName,  sep ="/") ,timeHighD, sep = ",", col.names = NA)
+
+  my.counter <- my.counter + 1 # ok done done
+  
+  
+  }  else if ( all(any(grepl("Control_4day", pasted)), any(grepl("Control_8day", pasted)),any(grepl("Control_15day", pasted)) ,
+         any(grepl("Control_29day", pasted)) , any(grepl("Low_4day", pasted)) ,any(grepl("Low_8day", pasted)) ,
+                   any(grepl("Low_15day", pasted)) ,any(grepl("Low_29day", pasted)) ,
+                   any(grepl("Middle_4day", pasted)) ,any(grepl("Middle_8day", pasted)) ,
+                   any(grepl("Middle_15day", pasted)) ,any(grepl("Middle_29day", pasted)) ,
+                   any(grepl("High_4day", pasted)) ,any(grepl("High_8day", pasted)) ,
+     any(grepl("High_15day", pasted)) , any(grepl("High_29day", pasted))) &
+                 length( unique( pasted) ) == 16  & length(unique(pasted[-(grep("Control", pasted)) ])) == 12 )
+  {
+  my.contrasts<- makeContrasts( High_29day-Control_29day, High_15day-Control_15day, High_8day-Control_8day, High_4day-Control_4day, 
+                                Middle_29day-Control_29day , Middle_15day-Control_15day, Middle_8day-Control_8day,  Middle_4day-Control_4day,
+                                Low_29day-Control_29day,  Low_15day-Control_15day, Low_8day-Control_8day, Low_4day-Control_4day,
+                             levels = design);
+    contrastsTimeHighD <- makeContrasts(
+                                  Dif29dayHighD = ( High_29day - High_15day ) - ( Control_29day - Control_15day  ),
+                                  Dif15dayHighD = ( High_15day - High_8day ) - ( Control_15day - Control_8day  ),
+                                  Dif8dayHighD = ( High_8day - High_4day ) - ( Control_8day - Control_4day  ),
+                                                                                                 levels = design);
+     
+  contrastsTimeMiddleD <- makeContrasts(
+                                  Dif29dayMiddleD = ( Middle_29day - Middle_15day ) - ( Control_29day - Control_15day  ),
+                                  Dif15dayMiddleD = ( Middle_15day - Middle_8day ) - ( Control_15day - Control_8day  ),
+                                  Dif8dayMiddleD = ( Middle_8day - Middle_4day ) - ( Control_8day - Control_4day  ),
+                                                                                levels = design);
+    
+  
+        fitTimeHighD <- contrasts.fit( fit_rma, contrastsTimeHighD )
+        fitTimeHighD2 <- eBayes( fitTimeHighD )
+            timeHighD <- topTable( fitTimeHighD2, adjust.method = "BH", sort = "F", n = Inf)
+              LimmaSyms<- mget(as.character( rownames(timeHighD )), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+                LimmaENTREZID<- mget(as.character( rownames(timeHighD)), rat2302rnentrezgENTREZID, ifnotfound = NA)
+                LimmaSyms<-unlist( LimmaSyms );
+                  LimmaENTREZID <- unlist(LimmaENTREZID)
+                  timeHighD$symbols <- LimmaSyms
+                  timeHighD$ENTREZID <- LimmaENTREZID
+            
+                    naampje<-celFile$COMPOUND_NAME[ 1 ]
+                        nnamm <- paste( naampje, "timeHighDose", sep = "_"  ) 
+                            finalName<-paste(nnamm, "rma",".csv", sep="_")
+                            write.table(file = paste(savePathDEG, finalName,  sep ="/") ,timeHighD, sep = ",", col.names = NA)
+  
+  fitTimeMiddleD <- contrasts.fit( fit_rma, contrastsTimeMiddleD )
+        fitTimeMiddleD2 <- eBayes( fitTimeMiddleD )
+            timeMiddleD <- topTable( fitTimeMiddleD2, adjust.method = "BH", sort = "F", n = Inf)
+              LimmaSyms<- mget(as.character( rownames(timeMiddleD )), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+                LimmaENTREZID<- mget(as.character( rownames(timeMiddleD)), rat2302rnentrezgENTREZID, ifnotfound = NA)
+                LimmaSyms<-unlist( LimmaSyms );
+                  LimmaENTREZID <- unlist(LimmaENTREZID)
+                  timeHighD$symbols <- LimmaSyms
+                  timeHighD$ENTREZID <- LimmaENTREZID
+            
+                    naampje<-celFile$COMPOUND_NAME[ 1 ]
+                        nnamm <- paste( naampje, "timeMiddleDose", sep = "_"  ) 
+                            finalName<-paste(nnamm, "rma",".csv", sep="_")
+                            write.table(file = paste(savePathDEG, finalName,  sep ="/") ,timeMiddleD, sep = ",", col.names = NA)
+
+  my.counter <- my.counter + 1 # ok done done
+
+  } else if ( all(any(grepl("Control_4day", pasted)), any(grepl("Control_8day", pasted)),any(grepl("Control_15day", pasted)) ,
+         any(grepl("Control_29day", pasted)) , any(grepl("Low_4day", pasted)) ,any(grepl("Low_8day", pasted)) ,
+                   any(grepl("Low_15day", pasted)) ,any(grepl("Low_29day", pasted)) ,
+                   any(grepl("Middle_4day", pasted)) ,any(grepl("Middle_8day", pasted)) ,
+                   any(grepl("Middle_15day", pasted)) ,any(grepl("Middle_29day", pasted)) ,
+                   any(grepl("High_4day", pasted)) ,any(grepl("High_8day", pasted)) ,
+     any(grepl("High_15day", pasted)) ) &
+                 length( unique( pasted) ) == 15  & length(unique(pasted[-(grep("Control", pasted)) ])) == 11 )
+  {
+  my.contrasts<- makeContrasts( High_15day-Control_15day, High_8day-Control_8day, High_4day-Control_4day, 
+                                Middle_29day-Control_29day , Middle_15day-Control_15day, Middle_8day-Control_8day,  Middle_4day-Control_4day,
+                                Low_29day-Control_29day,  Low_15day-Control_15day, Low_8day-Control_8day, Low_4day-Control_4day,
+                             levels = design);
+    contrastsTimeHighD <- makeContrasts(
+                                  Dif15dayHighD = ( High_15day - High_8day ) - ( Control_15day - Control_8day  ),
+                                  Dif8dayHighD = ( High_8day - High_4day ) - ( Control_8day - Control_4day  ),
+                                                                                                 levels = design);
+     
+  contrastsTimeMiddleD <- makeContrasts(
+                                  Dif29dayMiddleD = ( Middle_29day - Middle_15day ) - ( Control_29day - Control_15day  ),
+                                  Dif15dayMiddleD = ( Middle_15day - Middle_8day ) - ( Control_15day - Control_8day  ),
+                                  Dif8dayMiddleD = ( Middle_8day - Middle_4day ) - ( Control_8day - Control_4day  ),
+                                                                                levels = design);
+    
+  
+        fitTimeHighD <- contrasts.fit( fit_rma, contrastsTimeHighD )
+        fitTimeHighD2 <- eBayes( fitTimeHighD )
+            timeHighD <- topTable( fitTimeHighD2, adjust.method = "BH", sort = "F", n = Inf)
+              LimmaSyms<- mget(as.character( rownames(timeHighD )), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+                LimmaENTREZID<- mget(as.character( rownames(timeHighD)), rat2302rnentrezgENTREZID, ifnotfound = NA)
+                LimmaSyms<-unlist( LimmaSyms );
+                  LimmaENTREZID <- unlist(LimmaENTREZID)
+                  timeHighD$symbols <- LimmaSyms
+                  timeHighD$ENTREZID <- LimmaENTREZID
+            
+                    naampje<-celFile$COMPOUND_NAME[ 1 ]
+                        nnamm <- paste( naampje, "timeHighDose", sep = "_"  ) 
+                            finalName<-paste(nnamm, "rma",".csv", sep="_")
+                            write.table(file = paste(savePathDEG, finalName,  sep ="/") ,timeHighD, sep = ",", col.names = NA)
+  
+  fitTimeMiddleD <- contrasts.fit( fit_rma, contrastsTimeMiddleD )
+        fitTimeMiddleD2 <- eBayes( fitTimeMiddleD )
+            timeMiddleD <- topTable( fitTimeMiddleD2, adjust.method = "BH", sort = "F", n = Inf)
+              LimmaSyms<- mget(as.character( rownames(timeMiddleD )), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+                LimmaENTREZID<- mget(as.character( rownames(timeMiddleD)), rat2302rnentrezgENTREZID, ifnotfound = NA)
+                LimmaSyms<-unlist( LimmaSyms );
+                  LimmaENTREZID <- unlist(LimmaENTREZID)
+                  timeHighD$symbols <- LimmaSyms
+                  timeHighD$ENTREZID <- LimmaENTREZID
+            
+                    naampje<-celFile$COMPOUND_NAME[ 1 ]
+                        nnamm <- paste( naampje, "timeMiddleDose", sep = "_"  ) 
+                            finalName<-paste(nnamm, "rma",".csv", sep="_")
+                            write.table(file = paste(savePathDEG, finalName,  sep ="/") ,timeMiddleD, sep = ",", col.names = NA)
+
+  my.counter <- my.counter + 1 # ok done done
+          
+          }  else if ( all(any(grepl("Control_4day", pasted)), any(grepl("Control_8day", pasted)),
+         any(grepl("High_4day", pasted)) ,any(grepl("High_8day", pasted)) ) & 
+                         length( unique( pasted) ) == 4  & length(unique(pasted[-(grep("Control", pasted)) ])) == 2 )
+  {
+  my.contrasts<- makeContrasts( High_8day-Control_8day,
+                             High_4day-Control_4day,
+                             levels = design);
+    contrastsTimeHighD <- makeContrasts(
+                                                                
+                                  Dif8dayHighD = ( High_8day - High_4day ) - ( Control_8day - Control_4day  ),
+                                             levels = design);
+     
+        fitTimeHighD <- contrasts.fit( fit_rma, contrastsTimeHighD )
+        fitTimeHighD2 <- eBayes( fitTimeHighD )
+            timeHighD <- topTable( fitTimeHighD2, adjust.method = "BH", sort = "p", n = Inf)
+              LimmaSyms<- mget(as.character( rownames(timeHighD )), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+                LimmaENTREZID<- mget(as.character( rownames(timeHighD)), rat2302rnentrezgENTREZID, ifnotfound = NA)
+                LimmaSyms<-unlist( LimmaSyms );
+                  LimmaENTREZID <- unlist(LimmaENTREZID)
+                  timeHighD$symbols <- LimmaSyms
+                  timeHighD$ENTREZID <- LimmaENTREZID
+            
+                    naampje<-celFile$COMPOUND_NAME[ 1 ]
+                        nnamm <- paste( naampje, "timeHighDose", sep = "_"  ) 
+                            finalName<-paste(nnamm, "rma",".csv", sep="_")
+                            write.table(file = paste(savePathDEG, finalName,  sep ="/") ,timeHighD, sep = ",", col.names = NA)
+
+  my.counter <- my.counter + 1 # ok done done
+ 
+  } else if ( all(any(grepl("Control_4day", pasted)), any(grepl("Control_8day", pasted)),any(grepl("Control_15day", pasted)) ,
+         any(grepl("Control_29day", pasted)) , any(grepl("Low_4day", pasted)) ,any(grepl("Low_8day", pasted)) ,
+                   any(grepl("Low_15day", pasted)) ,any(grepl("Low_29day", pasted)) ,
+                   any(grepl("Middle_4day", pasted)) ,any(grepl("Middle_8day", pasted)) ,
+                   any(grepl("Middle_15day", pasted)) ,any(grepl("Middle_29day", pasted)) ,
+                   any(grepl("High_4day", pasted)) ,any(grepl("High_8day", pasted)) ) &
+                 length( unique( pasted) ) == 14  & length(unique(pasted[-(grep("Control", pasted)) ])) == 10 )
+  {
+  my.contrasts<- makeContrasts( High_8day-Control_8day, High_4day-Control_4day, 
+                                Middle_29day-Control_29day , Middle_15day-Control_15day, Middle_8day-Control_8day,  Middle_4day-Control_4day,
+                                Low_29day-Control_29day,  Low_15day-Control_15day, Low_8day-Control_8day, Low_4day-Control_4day,
+                             levels = design);
+    contrastsTimeHighD <- makeContrasts(
+                                  Dif8dayHighD = ( High_8day - High_4day ) - ( Control_8day - Control_4day  ),
+                                                                                                 levels = design);
+     
+  contrastsTimeMiddleD <- makeContrasts(
+                                  Dif29dayMiddleD = ( Middle_29day - Middle_15day ) - ( Control_29day - Control_15day  ),
+                                  Dif15dayMiddleD = ( Middle_15day - Middle_8day ) - ( Control_15day - Control_8day  ),
+                                  Dif8dayMiddleD = ( Middle_8day - Middle_4day ) - ( Control_8day - Control_4day  ),
+                                                                                levels = design);
+    
+  
+        fitTimeHighD <- contrasts.fit( fit_rma, contrastsTimeHighD )
+        fitTimeHighD2 <- eBayes( fitTimeHighD )
+            timeHighD <- topTable( fitTimeHighD2, adjust.method = "BH", sort = "p", n = Inf)
+              LimmaSyms<- mget(as.character( rownames(timeHighD )), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+                LimmaENTREZID<- mget(as.character( rownames(timeHighD)), rat2302rnentrezgENTREZID, ifnotfound = NA)
+                LimmaSyms<-unlist( LimmaSyms );
+                  LimmaENTREZID <- unlist(LimmaENTREZID)
+                  timeHighD$symbols <- LimmaSyms
+                  timeHighD$ENTREZID <- LimmaENTREZID
+            
+                    naampje<-celFile$COMPOUND_NAME[ 1 ]
+                        nnamm <- paste( naampje, "timeHighDose", sep = "_"  ) 
+                            finalName<-paste(nnamm, "rma",".csv", sep="_")
+                            write.table(file = paste(savePathDEG, finalName,  sep ="/") ,timeHighD, sep = ",", col.names = NA)
+  
+  fitTimeMiddleD <- contrasts.fit( fit_rma, contrastsTimeMiddleD )
+        fitTimeMiddleD2 <- eBayes( fitTimeMiddleD )
+            timeMiddleD <- topTable( fitTimeMiddleD2, adjust.method = "BH", sort = "F", n = Inf)
+              LimmaSyms<- mget(as.character( rownames(timeMiddleD )), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+                LimmaENTREZID<- mget(as.character( rownames(timeMiddleD)), rat2302rnentrezgENTREZID, ifnotfound = NA)
+                LimmaSyms<-unlist( LimmaSyms );
+                  LimmaENTREZID <- unlist(LimmaENTREZID)
+                  timeHighD$symbols <- LimmaSyms
+                  timeHighD$ENTREZID <- LimmaENTREZID
+            
+                    naampje<-celFile$COMPOUND_NAME[ 1 ]
+                        nnamm <- paste( naampje, "timeMiddleDose", sep = "_"  ) 
+                            finalName<-paste(nnamm, "rma",".csv", sep="_")
+                            write.table(file = paste(savePathDEG, finalName,  sep ="/") ,timeMiddleD, sep = ",", col.names = NA)
+
+  my.counter <- my.counter + 1 # ok done done
+          
+  
+  
+            } else (stop("Problem with setting up specific contrasts"))
+  
+  
+  fit <- contrasts.fit( fit_rma, my.contrasts ) # not filter
+    fit2 <- eBayes( fit )
+
+    # and for unfiltered list:
+  
+fitNF <-      contrasts.fit(fit_rma_notFiltered, my.contrasts)
+fitNF2 <- eBayes(fitNF)
+
+if ( my.counter != 1) {
+  stop(paste("problem at i = ", i))
+}
+
+for ( k in 1 : length( colnames( my.contrasts )))
+  {
+Limma_All_rma<-topTable( fit2, coef = k, adjust.method = "BH", sort ="p", n = Inf);
+
+LimmaSyms<- mget(as.character( rownames(Limma_All_rma) ), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+LimmaENTREZID<- mget(as.character( rownames(Limma_All_rma) ), rat2302rnentrezgENTREZID, ifnotfound = NA)
+LimmaSyms<-unlist( LimmaSyms );
+LimmaENTREZID <- unlist(LimmaENTREZID)
+Limma_All_rma$symbols <- LimmaSyms
+Limma_All_rma$ENTREZID <- LimmaENTREZID
+
+#name for data files
+naampje<-celFile$COMPOUND_NAME[ 1 ]
+nnamm <- gsub(" - ", "_",  paste( naampje, colnames( my.contrasts )[ k ], sep = "_"  ) )
+finalName<-paste(nnamm, "rma",".csv", sep="_")
+
+
+write.table(file = paste(savePathDEG, finalName, sep ="/") ,Limma_All_rma, sep = ",", col.names = NA)
+
+
+#also generate a non filtered list of all the probe sets
+Limma_All_rmaNF<-topTable( fitNF2, coef = k, adjust.method = "BH", sort ="p", n = Inf);
+
+LimmaSymsNF<- mget(as.character(rownames(Limma_All_rmaNF) ), rat2302rnentrezgSYMBOL, ifnotfound = NA)
+LimmaENTREZIDNF<- mget(as.character( rownames(Limma_All_rmaNF) ), rat2302rnentrezgENTREZID, ifnotfound = NA)
+LimmaSymsNF<-unlist( LimmaSymsNF );
+LimmaENTREZIDNF <- unlist(LimmaENTREZIDNF)
+Limma_All_rmaNF$symbols <- LimmaSymsNF
+Limma_All_rmaNF$ENTREZID <- LimmaENTREZIDNF
+#name for data files
+naampjeNF<-celFile$COMPOUND_NAME[ 1 ]
+nnammNF <- gsub(" - ", "_",  paste( naampjeNF, colnames( my.contrasts )[ k ], sep = "_"  ) )
+finalNameNF<-paste(nnammNF, "rma_NF",".csv", sep="_")
+
+
+write.table(file = paste(savePath, finalNameNF, sep ="/") ,Limma_All_rmaNF, sep = ",", col.names = NA)
+
+
+}
+
+print(paste("now at i is: ", i))
+
+
+
+} #end i-loop
+```
+
+
+
+
+
+
+
+

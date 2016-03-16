@@ -1,0 +1,402 @@
+siRNADB
+========================================================
+
+
+```{r}
+
+#author Steven Wink
+#email for support: hardervidertsie@gmail.com / s.wink.3@lacdr.leidenuniv.nl
+
+#I did adjust the original dharmacon spreadsheets for consistency ( column names & removed some typo's)
+
+rm(list=ls())
+library(gdata)
+library(stringr)
+options(stringsAsFactors= FALSE)
+counter<-1;
+emptyList = list()
+DHGpath <- "/home/winks/siRNA_dataBase/druggable human genome";
+setwd("/home/winks/siRNA_dataBase/sirnaDB")
+
+
+# define final dataframe that collects all data
+ masterDB <- data.frame( matrix( NA, nrow =0, ncol = 19)) 
+ colnames( masterDB ) <- c("Gene_Symbol", "well_id", "rack_id", "micronic_id", "type",  "Gene_id",  "species", "Accession_Number", "GI_Number", "Duplex1",         
+                         "Sequence1", "Duplex2", "Sequence2", "Duplex3", "Sequence3", "Duplex4", "Sequence4", "Order_Number", "DLibrary")
+
+# load the darma files
+#1
+proteinKinases <- read.xls( paste( DHGpath, "GU-003505 Human Protein Kinase Lot 09173.xls", sep = "/" ) )
+colnames(proteinKinases ) <- as.character( proteinKinases[ 2,  ] )
+print(head(proteinKinases)); 
+
+#2
+  GPCR <- read.xls( paste( DHGpath, "GU-003605 Human GPCR Lot 10158.xls", sep = "/" ) )
+  colnames( GPCR ) <- as.character( GPCR[ 2,  ] )
+  print(head(GPCR))
+
+#3
+    phosphatase <- read.xls( paste( DHGpath, "GU-003705 Human Phophatase Lot 08154.xls", sep = "/" ) )
+    colnames( phosphatase ) <- as.character( phosphatase[ 2,  ] )
+    print(head(phosphatase))
+
+#4
+      ionChannel <- read.xls( paste( DHGpath, "GU-003805 Human Ion Channel Lot 10171.xls", sep = "/" ) )
+      colnames( ionChannel ) <- as.character( ionChannel[ 2,  ] )
+      print(head(ionChannel))
+
+#5
+        drugTarget <- read.xls( paste( DHGpath, "GU-004655 Human Drug Target Lot 09115.xls", sep = "/" ) )
+        colnames( drugTarget ) <- as.character( drugTarget[ 2,  ] )
+        print(head(drugTarget)) 
+
+#6            
+          protease <- read.xls( paste( DHGpath, "GU-005105 Human Protease Lot 10152.xls", sep = "/" ) )
+          colnames( protease ) <- as.character( protease[ 2,  ] )
+          print(head(protease))   
+
+#7
+            UbConjSubset_1 <- read.xls( paste( DHGpath, "GU-005615 Human Ub Conj Subset 1 Lot 10149.xls", sep = "/" ) )
+            colnames( UbConjSubset_1 ) <- as.character( UbConjSubset_1[ 2,  ] )
+            print(head(UbConjSubset_1)) 
+
+#8      
+              UbConjSubset_2 <- read.xls( paste( DHGpath, "GU-005625 Human Ub Conj Subset 2 Lot 10150.xls", sep = "/" ) )
+              colnames( UbConjSubset_2 ) <- as.character( UbConjSubset_2[ 2,  ] )
+              print(head(UbConjSubset_2)) 
+
+#9
+                UbConjSubset_3 <- read.xls( paste( DHGpath, "GU-005635 Human Ub Conj Subset 3 Lot 10151.xls", sep = "/" ) )
+                colnames( UbConjSubset_3 ) <- as.character( UbConjSubset_3[ 2,  ] )
+                print(head(UbConjSubset_3)) 
+
+#10
+                  transcriptionFactors <- read.xls( paste( DHGpath, "GU-005805 Transcription Factors Lot 11156.xls", sep = "/" ) )
+                  colnames( transcriptionFactors ) <- as.character( transcriptionFactors[ 2,  ] )
+                  print(head(transcriptionFactors)) 
+
+#11                 
+                     DDR <- read.xls( paste( DHGpath, "GU-006005 Human DNA Damage Response Lot 11161.xls", sep = "/" ) )
+                     colnames( DDR ) <- as.character( DDR[ 2,  ] )
+                     print(head(DDR))
+
+
+rackIDpath <- "/home/winks/siRNA_dataBase/rackIDs";
+rackPlateFile <- "/home/winks/siRNA_dataBase/530 rackIDs and siRNA plates.xls";
+
+dbDFexample <- read.table( "/home/winks/siRNA_dataBase/template voor uploaden in db jan 2013.csv", sep = ",", header = TRUE );  
+rackPlate <- read.xls( rackPlateFile )
+rackPlate$FC1132 <- paste( "FC1132", rackPlate$FC1132, sep ="" );
+myList = list()
+rackIDFiles <- dir( rackIDpath )
+
+for ( i in 1 : length( rackIDFiles  )) 
+  {
+
+  currentRackData <- read.table( paste( rackIDpath, rackIDFiles[ i ], sep = "/" ), sep = ",", skip = 2, row.names= 1  )  ;
+  currentRackID <- gsub( "Rack.Identifier...", "", colnames( currentRackData )[ 1 ] );
+# now find the corresponding data in dharmacon files
+ 
+  
+    currentRackData$Wells <- rownames( currentRackData )
+  print( head(rackPlate) )
+  print(head(currentRackData))
+# index of rack ID in rackPlate
+  ind <- match( currentRackID, rackPlate$FC1132)
+ if( is.na(ind) )
+   {
+   stop ( paste( "currentRackID not found in darma-rackID connector mother file! : ", currentRackID, sep ="" ) );
+   }
+
+  darmaPlateID <- as.character( rackPlate[ind, "siRNA.plate"] )
+  greppedLibrayID <- gsub( " plate [0-9]{1,2} duplex [1-4]{1}$", "", darmaPlateID, perl = TRUE );
+  isSP <- gsub( " plate [0-9]{1,2} SP$", "", darmaPlateID, perl = TRUE );
+  
+  
+  
+  
+    print( isSP )
+    plateID <- str_match( darmaPlateID, "plate [0-9]{1,2}" );
+      plateID <- gsub("^p", "P", plateID)
+        plateID <-as.character( plateID[ 1, 1 ] )
+    if( is.na( plateID ))
+      {
+      stop("plateID for smart pool is na");
+      }
+    
+       if ( isSP == "Phosphatases" | greppedLibrayID == "Phosphatases" )
+         {
+         selectionDarmaAll <- phosphatase; 
+         plateIDduplex1 <- paste( plateID, "Duplex 1", sep = " ");
+         plateIDduplex2 <- paste( plateID, "Duplex 2", sep = " ");
+         plateIDduplex3 <- paste( plateID, "Duplex 3", sep = " ");
+         plateIDduplex4 <- paste( plateID, "Duplex 4", sep = " ");
+
+         }  else if ( isSP == "GPCR" | greppedLibrayID  == "GPCR") 
+            {
+             selectionDarmaAll <- GPCR; 
+             plateIDduplex1 <- paste( plateID, "Duplex 1", sep = " ");
+             plateIDduplex2 <- paste( plateID, "Duplex 2", sep = " ");
+             plateIDduplex3 <- paste( plateID, "Duplex 3", sep = " ");
+             plateIDduplex4 <- paste( plateID, "Duplex 4", sep = " ");
+            } else if ( isSP == "Ion channels" | greppedLibrayID == "Ion channels")
+                {
+                selectionDarmaAll <- ionChannel; 
+                plateIDduplex1 <- paste( plateID, "Duplex 1", sep = " ");
+                plateIDduplex2 <- paste( plateID, "Duplex 2", sep = " ");
+                plateIDduplex3 <- paste( plateID, "Duplex 3", sep = " ");
+                plateIDduplex4 <- paste( plateID, "Duplex 4", sep = " ");
+                } else if ( isSP == "Proteases" | greppedLibrayID == "Proteases")
+                    {
+                    selectionDarmaAll <- protease; 
+                    plateIDduplex1 <- paste( plateID, "dx 1", sep = " ");
+                    plateIDduplex2 <- paste( plateID, "dx 2", sep = " ");
+                    plateIDduplex3 <- paste( plateID, "dx 3", sep = " ");
+                    plateIDduplex4 <- paste( plateID, "dx 4", sep = " ");
+                    } else if ( isSP == "DNA Damage Response" | greppedLibrayID == "DNA Damage Response")   
+                        {
+                         selectionDarmaAll <- DDR; 
+                         plateIDduplex1 <- paste( plateID, "Duplex 1", sep = " ");
+                         plateIDduplex2 <- paste( plateID, "Duplex 2", sep = " ");
+                         plateIDduplex3 <- paste( plateID, "Duplex 3", sep = " ");
+                         plateIDduplex4 <- paste( plateID, "Duplex 4", sep = " ");                       
+                        } else if ( isSP == "Ubiquitin Conj. Set 1" | greppedLibrayID == "Ubiquitin Conj. Set 1")
+                            {
+                            selectionDarmaAll <- UbConjSubset_1; 
+                            plateIDduplex1 <- paste( plateID, "Duplex 1", sep = " ");
+                            plateIDduplex2 <- paste( plateID, "Duplex 2", sep = " ");
+                            plateIDduplex3 <- paste( plateID, "Duplex 3", sep = " ");
+                            plateIDduplex4 <- paste( plateID, "Duplex 4", sep = " ");
+                            } else if ( isSP == "Ubiquitin Conj. Set 2" | greppedLibrayID == "Ubiquitin Conj. Set 2")
+                        {
+                        selectionDarmaAll <- UbConjSubset_2; 
+                        plateIDduplex1 <- paste( plateID, "duplex 1", sep = " ");
+                        plateIDduplex2 <- paste( plateID, "duplex 2", sep = " ");
+                        plateIDduplex3 <- paste( plateID, "duplex 3", sep = " ");
+                        plateIDduplex4 <- paste( plateID, "duplex 4", sep = " ");
+                        } else if ( isSP == "Ubiquitin Conj. Set 3" | greppedLibrayID == "Ubiquitin Conj. Set 3")
+                    {
+                      selectionDarmaAll <- UbConjSubset_3; 
+                      plateIDduplex1 <- paste( plateID, "Duplex 1", sep = " ");
+                      plateIDduplex2 <- paste( plateID, "Duplex 2", sep = " ");
+                      plateIDduplex3 <- paste( plateID, "Duplex 3", sep = " ");
+                      plateIDduplex4 <- paste( plateID, "Duplex 4", sep = " ");                
+                    } else if ( isSP == "Protein Kinase" | greppedLibrayID == "Protein Kinase")
+              {
+              selectionDarmaAll <- proteinKinases; 
+              plateIDduplex1 <- paste( plateID, "duplex 1", sep = " ");
+              plateIDduplex2 <- paste( plateID, "duplex 2", sep = " ");
+              plateIDduplex3 <- paste( plateID, "duplex 3", sep = " ");
+              plateIDduplex4 <- paste( plateID, "duplex 4", sep = " ");
+              } else if ( isSP == "Transcription Factors" | greppedLibrayID ==  "Transcription Factors")
+          {
+          selectionDarmaAll <- transcriptionFactors; 
+          plateIDduplex1 <- paste( plateID, "Duplex 1", sep = " ");
+          plateIDduplex2 <- paste( plateID, "Duplex 2", sep = " ");
+          plateIDduplex3 <- paste( plateID, "Duplex 3", sep = " ");
+          plateIDduplex4 <- paste( plateID, "Duplex 4", sep = " ");
+          } else if ( isSP == "Drug Target" | greppedLibrayID == "Drug Target")
+      {
+      selectionDarmaAll <- drugTarget; 
+      plateIDduplex1 <- paste( plateID, "Duplex 1", sep = " ");
+      plateIDduplex2 <- paste( plateID, "Duplex 2", sep = " ");
+      plateIDduplex3 <- paste( plateID, "Duplex 3", sep = " ");
+      plateIDduplex4 <- paste( plateID, "Duplex 4", sep = " ");
+      } else 
+        {
+          stop( "No smart pool or singles matches found!");
+        }
+
+    selectionDarma1 <- selectionDarmaAll[ selectionDarmaAll$Plate == plateIDduplex1, ]
+    print( paste( "Number of selections found in dharma list: " , nrow(selectionDarma1), sep =""));
+      empty <- (96 - nrow(selectionDarma1) ) -  nrow( currentRackData[ currentRackData[ ,1 ] == "No Tube" |  currentRackData[ ,1 ] ==  "No Read" , ] )         
+      emptyList[[counter] ] <- c(currentRackID, empty)
+      counter <- counter + 1;
+
+    if ( nrow(selectionDarma1) < 50) 
+      {
+      warning("Number of matches found in dharmacon list is bellow 50!")
+      }
+       selectionDarma2 <- selectionDarmaAll[ selectionDarmaAll$Plate == plateIDduplex2, ]
+       print( paste( "Number of selections found in dharma list: " , nrow(selectionDarma2), sep =""));
+          empty <- (96 - nrow(selectionDarma1) ) -  nrow( currentRackData[ currentRackData[ ,1 ] == "No Tube" |  currentRackData[ ,1 ] ==  "No Read" , ] )         
+          emptyList[[counter] ] <- c(currentRackID, empty)
+          counter <- counter + 1;
+         if ( nrow(selectionDarma2) < 50) 
+           {
+            warning("Number of matches found in dharmacon list is bellow 50!")
+            }
+                selectionDarma3 <- selectionDarmaAll[ selectionDarmaAll$Plate == plateIDduplex3, ]
+               print( paste( "Number of selections found in dharma list: " , nrow(selectionDarma3), sep =""));
+                  empty <- (96 - nrow(selectionDarma1) ) -  nrow( currentRackData[ currentRackData[ ,1 ] == "No Tube" |  currentRackData[ ,1 ] ==  "No Read" , ] )         
+                  emptyList[[counter]] <- c(currentRackID, empty)
+                  counter <- counter + 1;
+                if ( nrow(selectionDarma3) < 50) 
+                  {
+                 warning("Number of matches found in dharmacon list is bellow 50!")
+                  }
+                 selectionDarma4 <- selectionDarmaAll[ selectionDarmaAll$Plate == plateIDduplex4, ]
+                 print( paste( "Number of selections found in dharma list: " , nrow(selectionDarma4), sep =""));
+                empty <- (96 - nrow(selectionDarma1) ) -  nrow( currentRackData[ currentRackData[ ,1 ] == "No Tube" |  currentRackData[ ,1 ] ==  "No Read" , ] )         
+                emptyList[[counter] ]  <- c(currentRackID, empty)
+                counter<-counter+1
+       if ( nrow(selectionDarma4) < 50) 
+         {
+          warning("Number of matches found in dharmacon list is bellow 50!")
+         }
+      
+    if ( any(selectionDarma1$Well != selectionDarma2$Well) |   any(selectionDarma2$Well != selectionDarma3$Well) | any(selectionDarma3$Well != selectionDarma4$Well) )
+     {
+     stop("Duplexes well locations are not equal for smart pool!")
+     }
+   
+ if ( any(selectionDarma1$"Gene Symbol" != selectionDarma2$"Gene Symbol") |   any(selectionDarma2$"Gene Symbol" != selectionDarma3$"Gene Symbol") | any(selectionDarma3$"Gene Symbol" != selectionDarma4$"Gene Symbol") )
+{
+stop("Duplexes genes are not equal for smart pool!")
+}
+    
+    head(selectionDarma1)  
+# now match the well locations of the dharma list with rack scanner output
+    
+indexWell <-  match( selectionDarma1$Well, rownames( currentRackData ) )
+ #check if all matches found and if all wells are unique
+    if (  sum( !is.na( indexWell ) ) != nrow(selectionDarma1) )
+      { 
+      stop( "Not all well matches found in dharma plates - scanned racks" )
+      }
+         if ( all( rownames( currentRackData ) != unique( rownames( currentRackData ) ) ) |  all( unique( selectionDarma1$Well  ) !=  selectionDarma1$Well  ) )
+        {
+        stop("Duplicate wells found")
+        }
+  if ( any( is.na( indexWell ) ) )
+    {
+    stop("No all wells found in rackID, check rackID file.")
+    }
+      if( str_match( colnames ( currentRackData )[ 1 ], "FC1132[0-9]{4}" ) != currentRackID  )
+        {
+        stop(" rackID identifier (FC1132..) file name does not correspond to written identifier in same file!")
+        }
+      # reshuffle order based on wells    
+    head(currentRackData)
+    colnames(selectionDarma1)
+if ( any(currentRackData$Wells[indexWell] != selectionDarma1$Well) )
+  {
+  stop(" matching wells in darma vs micronic racks incorrect!")
+  }
+    head( currentRackData[indexWell,])
+  
+      
+   if ( darmaPlateID == greppedLibrayID & isSP != darmaPlateID  )  # SP will be handeled in this if block
+{   
+dbTemplateFile <- data.frame( Gene_Symbol = selectionDarma1$"Gene Symbol"  )
+  dbTemplateFile$well_id <- selectionDarma1$Well
+    dbTemplateFile$rack_id <- currentRackID
+      dbTemplateFile$micronic_id <- currentRackData[ indexWell, 1 ]
+        dbTemplateFile$type <- "smartpool"
+          dbTemplateFile$species <- "human";
+            dbTemplateFile$Gene_id <- selectionDarma1$"GENE ID"
+              dbTemplateFile$Accession_Number <- selectionDarma1$"Gene Accession"
+                dbTemplateFile$GI_Number <- selectionDarma1$"GI Number"
+                  dbTemplateFile$Duplex1 <- selectionDarma1$"Duplex Catalog Number"
+                 dbTemplateFile$Sequence1 <- selectionDarma1$"Sequence"
+               dbTemplateFile$Duplex2 <- selectionDarma2$"Duplex Catalog Number"
+             dbTemplateFile$Sequence2 <- selectionDarma2$"Sequence"
+          dbTemplateFile$Duplex3 <- selectionDarma3$"Duplex Catalog Number"
+       dbTemplateFile$Sequence3 <- selectionDarma3$"Sequence"
+     dbTemplateFile$Duplex4 <- selectionDarma4$"Duplex Catalog Number"
+  dbTemplateFile$Sequence4 <- selectionDarma4$"Sequence"
+dbTemplateFile$Order_Number <- selectionDarma1$"Order Catalog Number"
+dbTemplateFile$DLibrary <- paste( selectionDarmaAll[1,1], isSP, sep = "_" ) 
+
+head(dbTemplateFile)
+} else if ( darmaPlateID != greppedLibrayID & isSP  == darmaPlateID  ) # single duplex will be handled in this if block
+    {
+    print( greppedLibrayID )
+    plateID <- str_match( darmaPlateID, "plate [0-9]{1,2} duplex [1-4]" );
+      plateID <- gsub("^p", "P", plateID);
+        plateID <-as.character( plateID[ 1, 1 ] )
+    if( is.na( plateID ))
+      {
+      stop( "PlateID for single duplex is na!")
+      }
+
+    dbTemplateFile <- data.frame( Gene_Symbol = selectionDarma1$"Gene Symbol"  )
+  dbTemplateFile$well_id <- selectionDarma1$Well
+    dbTemplateFile$rack_id <- currentRackID
+      dbTemplateFile$micronic_id <- currentRackData[ indexWell, 1 ]
+        dbTemplateFile$type <- "single"
+          dbTemplateFile$species <- "human";
+            dbTemplateFile$Gene_id <- selectionDarma1$"GENE ID"
+              dbTemplateFile$Accession_Number <- selectionDarma1$"Gene Accession"
+                dbTemplateFile$GI_Number <- selectionDarma1$"GI Number"
+                  dbTemplateFile$Duplex1 <- selectionDarma1$"Duplex Catalog Number"
+                 dbTemplateFile$Sequence1 <- selectionDarma1$"Sequence"
+               dbTemplateFile$Duplex2 <- selectionDarma2$"Duplex Catalog Number"
+             dbTemplateFile$Sequence2 <- selectionDarma2$"Sequence"
+          dbTemplateFile$Duplex3 <- selectionDarma3$"Duplex Catalog Number"
+       dbTemplateFile$Sequence3 <- selectionDarma3$"Sequence"
+     dbTemplateFile$Duplex4 <- selectionDarma4$"Duplex Catalog Number"
+  dbTemplateFile$Sequence4 <- selectionDarma4$"Sequence"
+dbTemplateFile$Order_Number <- selectionDarma1$"Order Catalog Number"
+dbTemplateFile$DLibrary <- paste( selectionDarmaAll[1,1], isSP, sep = "_" ) 
+    
+duplexNumber <-str_match( darmaPlateID, "[1-4]$" )
+    
+    if ( duplexNumber == 1 )
+      {
+              dbTemplateFile$Duplex2 <- NA
+             dbTemplateFile$Sequence2 <- NA
+          dbTemplateFile$Duplex3 <- NA
+       dbTemplateFile$Sequence3 <- NA
+     dbTemplateFile$Duplex4 <- NA
+  dbTemplateFile$Sequence4 <- NA
+      } else if ( duplexNumber == 2 )
+        {
+               dbTemplateFile$Duplex1 <- NA
+             dbTemplateFile$Sequence1 <- NA
+          dbTemplateFile$Duplex3 <- NA
+       dbTemplateFile$Sequence3 <- NA
+     dbTemplateFile$Duplex4 <- NA
+  dbTemplateFile$Sequence4 <- NA
+        } else if ( duplexNumber == 3 )
+          {
+              dbTemplateFile$Duplex2 <- NA
+             dbTemplateFile$Sequence2 <- NA
+          dbTemplateFile$Duplex1 <- NA
+       dbTemplateFile$Sequence1 <- NA
+     dbTemplateFile$Duplex4 <- NA
+  dbTemplateFile$Sequence4 <- NA
+          } else if ( duplexNumber ==4 )
+            {
+            dbTemplateFile$Duplex2 <- NA
+             dbTemplateFile$Sequence2 <- NA
+          dbTemplateFile$Duplex3 <- NA
+       dbTemplateFile$Sequence3 <- NA
+     dbTemplateFile$Duplex1 <- NA
+  dbTemplateFile$Sequence1 <- NA
+            } else 
+              {
+              stop( "Couldnt match duplex number for adapting single duplex based dataframe" )  
+              }
+              
+    
+    
+    } else # 
+      {
+        stop("Something went wrong with the regular expressions to find out which darma file to read and if its a single duplex or smart pool");
+      }
+  
+  colnames(dbTemplateFile)
+  masterDB <- rbind( masterDB, dbTemplateFile)
+  
+  }
+
+write.table(masterDB, file = "masterDB_2013_02_19.csv", sep =",", row.names = F)
+unlisted<-unlist(emptyList)
+dim(unlisted)
+
+dim(emptyList)
+write.table(unlisted, file = "emtpyList.csv", sep = ",", row.names=F)
+```
+
+

@@ -1,0 +1,432 @@
+Hi Steven,
+
+sorry for the delay in responding, since currently I have to do a lot of things from two projects parallelly.  
+
+So it's clear now that you want to find out which genes show significant "synergistic" effect. Statistically, the issue can be translated to test:   abs(log2FC(ABvsC))  >  abs(log2(AvsC) + log2(BvsC)). Your understanding is absolutely right!
+
+However, this inequality can be divided into many inequalities without an absolute operator, depending on whether the three log2FC values are positive or negative. A statistical hypothesis testing cannot be performed simultaneously for these inequalities or for a inequality with an absolute operator.
+
+If you just test the null hypothesis H0:  log2FC(ABvsC)  = log2(AvsC) + log2(BvsC), in some case you will get the a wrong answer. For example, when log2(AvsC)>0 and log2(BvsC)>0, and the null hypothesis is rejected, it only tell you  log2FC(ABvsC) ??? log2(AvsC) + log2(BvsC), but it cannot tell you log2FC(ABvsC) > log2(AvsC) + log2(BvsC); since in this case, log2FC(ABvsC) < log2(AvsC) + log2(BvsC) could also lead to rejection of the null hypothesis. 
+
+I figure out one simplified way to solve your issue.  You may first calculate the value of abs(log2(AvsC) + log2(BvsC)) and abs( log2FC(ABvsC)). If abs(log2FC(ABvsC))  >  abs(log2(AvsC) + log2(BvsC)), then check whether the null hypothesis: log2FC(ABvsC)  = log2(AvsC) + BvsC) is rejected. Only under the condition: abs(log2FC(ABvsC))  >  abs(log2(AvsC) + log2(BvsC)), the significant genes resulted from the two-sided test are the ones that you are interested in.
+
+Now we go back to the linear model:
+
+You: Are XA, XB, XAB and XC the 4 rows of the contrast matrix? Is y the average gene expression of all 4 groups?
+
+No, XA, XAB, XB, and XC are the column vector for your design matrix:
+   A AB B C
+1  1  0 0 0
+2  1  0 0 0
+3  1  0 0 0
+4  1  0 0 0
+5  0  0 1 0
+6  0  0 1 0
+7  0  0 1 0
+8  0  0 1 0
+9  0  1 0 0
+10 0  1 0 0
+11 0  1 0 0
+12 0  1 0 0
+13 0  0 0 1
+14 0  0 0 1
+15 0  0 0 1
+16 0  0 0 1
+
+Strictly, the linear model is  yi=??1xiA+ ??2xiAB+ ??3xiB+ ??4xiC+??i, i=1,..16. The term ??i is random error.  Thus, the response y are the gene expression (log2)values. You have 16 (log2)values (y1,.y16) [4 samples (A, B, AB and C)*each 4 replicates]. 
+e.g. y1=??1*1+ ??2*0+ ??3*0+ ??4*0= ??1 +??1;  (see 1. row of your design matrix: 1 0 0 0, which are the values for x1A x1AB x1B x1C)
+        .
+        . 
+       y5=??1*0+ ??2*0+ ??3*1+ ??4*0= ??3+??5;   (see 5. row of your design matrix: 0 0 1 0, which are the values for x5A x5AB x5B x5C)
+        .
+        .
+       y9=??1*0+ ??2*1+ ??3*0+ ??4*0= ??2+??9;  (see 9. row of your design matrix: 0 1 0 0, which are the values for x9A x9AB x9B x9C)
+        .
+        .
+       y16=??1*0+ ??2*0+ ??3*0+ ??4*1= ??4+??16;  (see 16. row of your design matrix: 0 0 0 1, which are the values for x16A x16AB x16B x16C).
+
+Then, you can think:  ??1=( y1+ y2+ y3+ y4)/4, ??2=( y9+ y10+ y11+ y12)/4, ??3=( y5+ y6+ y7+ y8)/4, ??4=( y13+ y14+ y15+ y16)/4, therefore ??1,  ??2, ??3 and ??4 are the average (log2)values for each group A, AB , B and C.
+
+The average log2FC(ABvsC) value=??2-??4, average log2(AvsC) value=??1-??4, and log2(BvsC)=??3-??4.
+
+Step 1. These three average log2FC values can be calculated by using limma package with the contrast matrix:
+Contrasts
+Levels A.vs.C B.vs.C AB.vs.C
+A       1      0       0
+B       0      1       0
+AB      0      0       1
+C      -1     -1      -1
+You should then calculate the absolute value of log2FC(ABvsC) and log2(AvsC) + log2(BvsC) and check for which gene abs(log2FC(ABvsC))  >  abs(log2(AvsC) + log2(BvsC)).
+
+
+
+Step  2. Testing H0:  log2FC(ABvsC)  = log2(AvsC) + log2(BvsC)  <==> ??2-??4= ??1-??4 +??3-??4 <==> ??2+ ??4= ??1 +??3
+by using your contrast matrix:
+Contrasts
+  Levels synergy
+    A       -1
+    AB       1
+    B       -1
+    C        1
+
+?scale
+Then, the genes that meet the both criteria: (1) abs(log2FC(ABvsC))  >  abs(log2(AvsC) + log2(BvsC))  
+                                                                                    (2) rejected H0:  ??2+ ??4= ??1 +??3. (e.g. B.H. adjusted P-value<0.01 (or your cutoff)),
+show significant "synergistic" effect. 
+
+Please find my answers to your other questions in red below!
+
+If anything is unclear please feel free to contact with me.
+
+Kind regards,
+Xiaoqi
+
+
+```{r }
+rm(list=ls())
+
+setwd("H:/R_HOME/R_WORK/Lisa synergy analysis")
+options(stringsAsFactors = FALSE)
+library(affy)
+library(limma)
+library(AnnotationDbi)
+library("org.Hs.eg.db")
+#install.packages("C:/Users/winks/Documents/R/win-library/3.0/hthgu133pluspmhsentrezgcdf_17.1.0.zip", repos = NULL)
+library("hthgu133pluspmhsentrezgcdf")
+library(hthgu133pluspmhsentrezg.db)
+
+library(arrayQualityMetrics)
+
+library(genefilter)
+
+
+kPathFiles <- "C:/Users/winks/Documents/lectures/SafeSciMet 2014 R demo/CELL files lisa"
+kFiles <- dir(kPathFiles)
+kMetaData <- read.delim(file = "Lisa-2-exp-design.txt", sep = "\t")
+head(kMetaData)
+
+my.data<-ReadAffy( celfile.path = kPathFiles )
+
+#my.data
+annotation(my.data)<-"hthgu133pluspmhsentrezg.db"
+my.data@cdfName <- "hthgu133pluspmhsentrezgcdf"
+my.data
+probes(my.data)[1:6,1:10]
+
+
+# add metadata
+rownames(kMetaData)<- paste(kMetaData$treatment, kMetaData$replicate.no, sep = "_")
+
+# change the sample names to something meaningfull:
+old.sample.names <- sampleNames(my.data) 
+old.sample.names <- gsub("\\.CEL", "", old.sample.names)
+#check if the order is the same:
+
+head(kMetaData)
+mt<-match(kMetaData$array.SXS.code, old.sample.names)
+cbind(kMetaData$array.SXS.code, old.sample.names)
+sampleNames(my.data) <- row.names(kMetaData)
+#some more manual checking:
+cbind(sampleNames(my.data), old.sample.names, kMetaData$Array.SXS.code, rownames(kMetaData) )
+all(sampleNames(my.data)==rownames(kMetaData))
+all(old.sample.names==kMetaData$Array.SXS.code)
+
+vmd <- data.frame(labelDescription = c( "number of orginal experiment", "Treatment: selection of 2D HepG2 micro array data performed by Lisa Frederiksson at Leiden Universit. TNFa data removed.", "replicate number", "cell file number", "treatment -CTR: DMSO control BSA: vehicle control used of TNFa data"))
+
+phenoData(my.data) <- new("AnnotatedDataFrame", data = kMetaData, varMetadata = vmd)
+
+
+
+# extract needed samples, 1 compound at a time to reduce complexitiy of analysis
+
+# er is niet voor alle compounds een DMSO 0 uur (alleen DMSO dus) - maar wel voor alle compounds is er 6 h BSA - wat alleen compound is met  BSA vehicle
+#synergistic6h = (compound.6.h.TNF-DMSO.0.h.CTR) - ((compound.6.h.BSA-DMSO.0.h.CTR) + (DMSO.6.h.TNF-DMSO.0.h.CTR))
+
+kMetaData
+
+# DMSO 0 h CTR  //the control
+# DMSO 6 h TNF  //TNF effect
+# 6 h BSA       //compound effect
+# 6 h TNF     //TNF and compound effect
+
+unique(kMetaData$treatment)
+
+ind1 <- grep("DMSO 0 h CTR", pData(my.data)$treatment )
+ind2 <- grep("DMSO 6 h TNF", pData(my.data)$treatment )
+ind3 <- grep("6 h BSA", pData(my.data)$treatment )
+ind4 <- grep("6 h TNF", pData(my.data)$treatment )
+ind<- unique(c(ind1, ind2,ind3,ind4))
+  
+my.data <- my.data[ , ind ]
+pData(my.data)
+
+
+
+# First a quality report on the raw data:
+intgroup = c( "treatment", "replicate.no" )
+#arrayQualityMetrics(expressionset = (my.data),
+         #       force = TRUE,
+           #     do.logtransform = TRUE, intgroup = intgroup)
+      
+
+rma.data <- rma(my.data)
+
+
+ # arrayQualityMetrics( rma.data, intgroup = intgroup  ) 
+# intgroup = c( "replicate.no" )
+# In this case RMA was clearly better. Probably will use rma for all the data sets
+
+# For obtaining most diff expressed DEG's; filtering will be applied to reduce multiple testing error.
+# However also non filtered set is needed for the cross-model comparisons
+
+rma.data.f <- nsFilter( rma.data,  var.func = IQR, filterByQuantile=TRUE, var.cutoff = 0.3, remove.dupEntrez = TRUE, require.entrez= TRUE, feature.exclude="^AFFX" )
+
+rma.data.f <- rma.data.f$eset
+# remove all probes with aver exprs <- 0.33 quantile
+row.means <- rowMeans(exprs(rma.data.f))
+filter.threshold <- quantile(row.means, 0.33)
+rma.data.f <- rma.data.f[row.means > filter.threshold, ]
+min(rowMeans(exprs(rma.data.f)))
+
+unique(TS)
+TS <- rma.data.f$treatment
+TS <- gsub(" ", ".", TS)
+unique(TS)
+TS <- factor(TS, levels=c( "Dic.6.h.BSA",  "CBZ.6.h.BSA", "Ket.6.h.BSA","MTX.6.h.BSA", "Nef.6.h.BSA","Dic.6.h.TNF",
+                           "CBZ.6.h.TNF", "Ket.6.h.TNF","MTX.6.h.TNF", "Nef.6.h.TNF", "DMSO.0.h.CTR", "DMSO.6.h.TNF"))
+
+pData(my.data)
+design <- model.matrix(~0+TS)
+  colnames(design) <- levels(TS)
+
+
+fit <- lmFit(rma.data.f, design)
+ 
+# first expression data of single and combined effects:
+cont.matrix <- makeContrasts(
+                              DICvsDMSO=Dic.6.h.BSA-DMSO.0.h.CTR,
+                              CBZvsDMSO=CBZ.6.h.BSA-DMSO.0.h.CTR,
+                              KETvsDMSO=Ket.6.h.BSA-DMSO.0.h.CTR,
+                              MTXvsDMSO=MTX.6.h.BSA-DMSO.0.h.CTR,
+                              NEFvsDMSO=Nef.6.h.BSA-DMSO.0.h.CTR,
+                              
+                              DIC_TNFvsDMSO=Dic.6.h.TNF-DMSO.0.h.CTR,
+                              CBZ_TNFvsDMSO=CBZ.6.h.TNF-DMSO.0.h.CTR,
+                              KET_TNFvsDMSO=Ket.6.h.TNF-DMSO.0.h.CTR,
+                              MTX_TNFvsDMSO=MTX.6.h.TNF-DMSO.0.h.CTR,
+                              NEF_TNFvsDMSO=Nef.6.h.TNF-DMSO.0.h.CTR,                              
+                              
+                              TNFvsDMSO=DMSO.6.h.TNF-DMSO.0.h.CTR,
+                                                          
+                              levels=design)
+
+# then a second analysis for the synergy effect
+
+cont.matrix <- makeContrasts( 
+                              synerg_DIC = (Dic.6.h.TNF-DMSO.0.h.CTR) - ((Dic.6.h.BSA-DMSO.0.h.CTR) + (DMSO.6.h.TNF-DMSO.0.h.CTR)),
+                              synerg_CBZ = (CBZ.6.h.TNF-DMSO.0.h.CTR) - ((CBZ.6.h.BSA-DMSO.0.h.CTR) + (DMSO.6.h.TNF-DMSO.0.h.CTR)),
+                              synerg_KET = (Ket.6.h.TNF-DMSO.0.h.CTR) - ((Ket.6.h.BSA-DMSO.0.h.CTR) + (DMSO.6.h.TNF-DMSO.0.h.CTR)),
+                              synerg_MTX = (MTX.6.h.TNF-DMSO.0.h.CTR) - ((MTX.6.h.BSA-DMSO.0.h.CTR) + (DMSO.6.h.TNF-DMSO.0.h.CTR)),
+                              synerg_NEF = (Nef.6.h.TNF-DMSO.0.h.CTR) - ((Nef.6.h.BSA-DMSO.0.h.CTR) + (DMSO.6.h.TNF-DMSO.0.h.CTR)),
+                              levels=design)
+
+
+   fit2 <- contrasts.fit(fit, cont.matrix)
+   fit2 <- eBayes(fit2)
+    
+    
+?topTable
+
+    synerg_DIC <- topTable(fit2[, "synerg_DIC"], adjust.method = "BH", sort.by = "none", n ="inf" )
+    synerg_CBZ <- topTable(fit2[, "synerg_CBZ"], adjust.method = "BH", sort.by = "none",  n ="inf" )
+    synerg_KET <- topTable(fit2[, "synerg_KET"], adjust.method = "BH", sort.by = "none",  n ="inf"   )
+    synerg_MTX <- topTable(fit2[, "synerg_MTX"], adjust.method = "BH", sort = "none",  n ="inf"   )
+    synerg_NEF <- topTable(fit2[, "synerg_NEF"], adjust.method = "BH", sort = "none",  n ="inf"   )
+     
+
+    dim(synerg_DIC )
+    dim(synerg_CBZ )
+    dim(synerg_KET )
+    dim(synerg_MTX )
+    dim(synerg_NEF )
+
+    head(synerg_DIC )
+    head(synerg_CBZ )
+    head(synerg_KET )
+    head(synerg_MTX )
+    head(synerg_NEF )
+
+
+
+geneID <- unlist( mget( synerg_DIC$ID, env = hthgu133pluspmhsentrezgENTREZID ) )
+syms <- unlist( mget( synerg_DIC$ID, env = hthgu133pluspmhsentrezgSYMBOL ) )
+synerg_DIC$syms <- syms
+synerg_DIC$geneID <- geneID
+write.table(synerg_DIC, file = "synerg_DIC.txt", sep = "\t", col.names = NA)
+
+geneID <- unlist( mget( synerg_CBZ$ID, env = hthgu133pluspmhsentrezgENTREZID ) )
+syms <- unlist( mget( synerg_CBZ$ID, env = hthgu133pluspmhsentrezgSYMBOL ) )
+synerg_CBZ$syms <- syms
+synerg_CBZ$geneID <- geneID
+write.table(synerg_CBZ, file = "synerg_CBZ.txt", sep = "\t", col.names = NA)
+
+geneID <- unlist( mget( synerg_KET$ID, env = hthgu133pluspmhsentrezgENTREZID ) )
+syms <- unlist( mget( synerg_KET$ID, env = hthgu133pluspmhsentrezgSYMBOL ) )
+synerg_KET$syms <- syms
+synerg_KET$geneID <- geneID
+write.table(synerg_KET, file = "synerg_KET.txt", sep = "\t", col.names = NA)
+
+geneID <- unlist( mget( synerg_MTX$ID, env = hthgu133pluspmhsentrezgENTREZID ) )
+syms <- unlist( mget( synerg_MTX$ID, env = hthgu133pluspmhsentrezgSYMBOL ) )
+synerg_MTX$syms <- syms
+synerg_MTX$geneID <- geneID
+write.table(synerg_MTX, file = "synerg_MTX.txt", sep = "\t", col.names = NA)
+
+geneID <- unlist( mget( synerg_NEF$ID, env = hthgu133pluspmhsentrezgENTREZID ) )
+syms <- unlist( mget( synerg_NEF$ID, env = hthgu133pluspmhsentrezgSYMBOL ) )
+synerg_NEF$syms <- syms
+synerg_NEF$geneID <- geneID
+write.table(synerg_NEF, file = "synerg_NEF.txt", sep = "\t", col.names = NA)
+
+
+
+synerg_DIC$contrast <- "synerg_DIC" 
+synerg_CBZ$contrast <- "synerg_CBZ"  
+synerg_KET$contrast <- "synerg_KET"  
+synerg_MTX$contrast <- "synerg_MTX"  
+synerg_NEF$contrast <- "synerg_NEF"  
+
+# select genes
+head(synerg_DIC_s)
+head(synerg_CBZ_s)
+synerg_DIC_s <- synerg_DIC[ synerg_DIC$syms %in% sel.genes, ]
+synerg_CBZ_s <- synerg_CBZ[ synerg_CBZ$syms %in% sel.genes, ]
+synerg_KET_s <- synerg_KET[ synerg_KET$syms %in% sel.genes, ]
+synerg_MTX_s <- synerg_MTX[ synerg_MTX$syms %in% sel.genes, ]
+synerg_NEF_s <- synerg_NEF[ synerg_NEF$syms %in% sel.genes, ]
+
+sel.genes # these were based on adj.p < 0.05 (BH)
+all.data <- rbind(synerg_DIC,synerg_CBZ,synerg_KET,synerg_MTX,synerg_NEF)
+# all p.adj < 0.05 gene selection:
+
+
+# select these genes
+
+
+head(synergistic6h)
+
+all.data <- do.call("rbind",list(CBZvsDMSO,CBZ_TNF_1hvsCBZ_BSA_1h,CBZ_TNF_6hvsCBZ_BSA_6h,TNFvsDMSO_1h,TNFvsDMSO_6h,synergistic6h))
+
+head(fit2$coefficients)
+
+geneID <- unlist( mget( rownames(fit2$coefficients), env = hthgu133pluspmhsentrezgENTREZID ) )
+syms <- unlist( mget( rownames(fit2$coefficients), env = hthgu133pluspmhsentrezgSYMBOL ) )
+head(geneID)
+head(syms)
+
+
+
+
+fold.change.data <- as.data.frame(fit2$coefficients)
+head(fold.change.data)
+fold.change.data$syms <- syms
+fold.change.data$geneID <- geneID
+write.table(fold.change.data, file = "foldchangeData.txt", sep = "\t", col.names = NA)
+
+
+
+synergistic6h.expl <- all.data[ all.data$contrast == "synergistic6h", ]
+sel.sign <-   synergistic6h.expl[synergistic6h.expl$adj.P.Val < 0.05,]
+sel.sign[order(sel.sign$adj.P.Val),]
+
+sel.sign<-sel.sign[ order(sel.sign$P.Value), ]
+write.table(sel.sign, file = "sel.sign.txt", sep ="\t", col.names = NA)
+
+# highest abs(FC values) of all conditions tested
+
+
+head(all.data)
+require(plyr)
+all.means <- ddply(all.data, .(syms), summarize, mean = mean(logFC))
+head(all.means)
+
+all.means <- all.means[rev(order(abs(all.means$mean))),]
+
+top100 <- all.means[1:100,]
+ind <- all.data$syms %in% top100$syms
+sel.data <- all.data[ind,]
+head(sel.data)
+
+
+write.table(sel.data, file = "top100onAverage.csv", sep =",", col.names = TRUE, row.names=FALSE)
+
+require(ggplot2)
+p <- ggplot(sel.data, aes(contrast, syms)) + geom_tile(aes(fill = logFC),
+     colour = "white") + scale_fill_gradient(low = "green",
+     high = "red")
+
+base_size <- 9
+ p + theme_grey(base_size = base_size) + labs(x = "treatment",
+     y = "gene symbol") + scale_x_discrete(expand = c(0, 0)) +
+     scale_y_discrete(expand = c(0, 0)) + theme(legend.position = "none",
+     axis.ticks = element_blank(), axis.text.x = element_text(size = base_size *
+         0.8, angle = 300, hjust = 0, colour = "grey50"))
+
+
+
+
+
+synerg_DIC_s <- synerg_DIC[ synerg_DIC$syms %in% sel.genes, ]
+synerg_CBZ_s <- synerg_CBZ[ synerg_CBZ$syms %in% sel.genes, ]
+synerg_KET_s <- synerg_KET[ synerg_KET$syms %in% sel.genes, ]
+synerg_MTX_s <- synerg_MTX[ synerg_MTX$syms %in% sel.genes, ]
+synerg_NEF_s <- synerg_NEF[ synerg_NEF$syms %in% sel.genes, ]
+    
+
+
+head(sel.data)
+myDFT <- data.frame(synerg_DIC = synerg_DIC_s$logFC,
+                    synerg_CBZ= synerg_CBZ_s$logFC,
+                    synerg_KET= synerg_KET_s$logFC,
+                    synerg_MTX = synerg_MTX_s$logFC,
+                    synerg_NEF = synerg_NEF_s$logFC
+                    )
+rownames(myDFT )<- synerg_CBZ_s$syms
+?pheatmap
+require(pheatmap)
+pheatmap(as.matrix(myDFT),  main= "genes that adj.p < 0.05 ",  
+         border_color=NA, scale = "column",
+         cluster_rows = TRUE, cluster_cols = TRUE, clustering_distance_rows = "euclidean", 
+         clustering_distance_cols = "euclidean", clustering_method = "ward",  
+         legend = TRUE, fontsize = 10,
+         display_numbers = F
+         
+         )
+min(myDFT)
+# selection of genes for heatmap
+
+
+
+# attach single effect fold change values
+FC.value <- read.delim(file = "foldchangeData.txt", sep ="\t", row.names =1 )
+head(FC.value)
+head(myDFT)
+nrow(myDFT)
+length(unique(rownames(myDFT)))
+length(FC.value$syms)== length(unique(FC.value$syms))
+ind <- match(rownames(myDFT), FC.value$syms)
+length(unique(ind))
+
+myDFTmd <- cbind(myDFT, FC.value[ind,])
+  head(myDFTmd)
+
+write.table(myDFTmd, file = "sel_genes_with_singleFC_effects.txt", sep ="\t", col.names = NA)
+dir()
+
+
+
+
+```
+
+
+

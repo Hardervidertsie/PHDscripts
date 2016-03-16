@@ -1,0 +1,54 @@
+Usefull tricks
+========================================================
+
+http://stackoverflow.com/questions/1295955/what-is-the-most-useful-r-trick
+
+```{r}
+
+library(data.table)
+
+## Fix up your example data.frame so that the columns aren't all factors
+## (not necessary, but shows that data.table can now use numeric columns as keys)
+cols <- c(1:5, 7:10)
+test[cols] <- lapply(cols, FUN=function(X) as.numeric(as.character(test[[X]])))
+test[11] <- as.logical(test[[11]])
+
+## Create two data.tables with which to demonstrate a data.table merge
+dt <- data.table(test, key=names(test))
+dt2 <- copy(dt)
+## Add to each one a unique non-keyed column
+dt$X <- seq_len(nrow(dt))
+dt2$Y <- rev(seq_len(nrow(dt)))
+
+## Merge them based on the keyed columns (in both cases, all but the last) to ...
+## (1) create a new data.table
+dt3 <- dt[dt2]
+## (2) or (poss. minimizing memory usage), just add column Y from dt2 to dt
+dt[dt2,Y:=Y]
+  
+
+One very useful function I often use is dput(), which allows you to dump an object in the form of R code.
+
+str() tells you the structure of any object.
+
+with(df, A + B) ## I know this will use A in df!
+with() sets up an environment within which the R expression is evaluated. within() does the same thing but allows you to modify the data object used to create the environment.
+
+df$1
+Error: unexpected numeric constant in "df$1"
+> df$`1`
+In this case, df[,"1"] would also work. But back ticks work inside formulas!
+  
+  The traceback() function is a must when you have an error somewhere and do not understand it readily. It will print a trace of the stack, very helpful as R is not very verbose by default.
+
+Then setting options(error=recover) will allow you to "enter" into the function raising the error and try and understand what happens exactly, as if you had full control over it and could put a browser() in it.
+
+These three functions can really help debugging your code.
+
+system()
+
+pipe()
+
+data.frame(VAR = names(df), COL = seq_along(df))
+
+```

@@ -1,0 +1,84 @@
+
+Script to check tracking by plotting tracks. Time is displayed in hue, objects as symbol/color combinations.
+Usefull to check tracking results with original movies.
+Can be used after running general_analysis script
+
+
+```{r }
+
+library(reshape)
+library(ggplot2)
+#======================User defined info======================================================
+#======================User defined info======================================================
+#======================User defined info======================================================
+myPath <- "/media/Image Data/Michiel/trackOrderedData" # path to "trackOrderedData" directory 
+xCordFolder <- "xCoords"
+yCordFolder <- "yCoords"
+fileNameX <- "A09_1__mock__ xCoord.csv"
+fileNameY <- "A09_1__mock__ yCoord.csv"
+myRows <- c(66,73,44,109, 34,55,101,99, 88, 23,  54, 1,2,3,55,66,77,25,79,96,84)   # enter the rows of data you are interested in 
+myTitle <- "A09_1__mock__ yCoord"
+
+#======================End of User defined info======================================================
+#======================End of User defined info======================================================
+#======================End of User defined info======================================================
+
+xCoordData <- read.delim( paste( myPath, xCordFolder, fileNameX , sep = "/"), sep = ",", header = TRUE, row.names = 1)
+yCoordData <- read.delim( paste( myPath, yCordFolder, fileNameY, sep = "/"), sep = ",", header = TRUE, row.names = 1)
+dim(yCoordData)
+head(xCoordData)
+
+yCoordData$rowObjNr <- rownames(yCoordData)
+yCoordData <- yCoordData[ myRows ,]
+
+yLong <- melt(yCoordData )
+head(yLong)
+colnames(yLong)[2:3]<-c("Frame", "yCoord" )
+
+
+xCoordData$rowObjNr <- rownames(xCoordData)
+xCoordData<-xCoordData[ myRows ,]
+xLong <- melt(xCoordData)
+head(xLong)
+colnames(xLong)[2:3]<-c("Frame", "xCoord" )
+
+xyData <- cbind(yLong, xLong )
+head(xyData)
+
+
+  xyData[,4]<-NULL
+  xyData[,4]<-NULL
+  xyData<- xyData[ !is.na(xyData$yCoord), ]
+
+head(xyData)
+
+#change to continuous scale
+xyData$rowObjNr <- as.character(xyData$rowObjNr)
+xyData$FrameNr <- as.numeric(xyData$Frame)
+xyData$rowObjNr <- as.factor(xyData$rowObjNr)
+    head(xyData)
+    myHueBreaks <- as.numeric(quantile(xyData$FrameNr, c(seq(0.1:1, by = 0.2))))
+p <- ggplot(data = xyData, aes( x = xCoord, y = yCoord  )  ) + ylim(1024, 0) + xlim(0,1024)   +
+              geom_point( size = 1, aes(alpha = FrameNr, shape =  rowObjNr, color = rowObjNr )  ) +
+     scale_shape_manual( values = c(1 : 25, 25:1 ) )  +
+   scale_alpha(range = c(0.05, 1), breaks = myHueBreaks ) +
+  ggtitle( myTitle) + theme(legend.direction = "horizontal", legend.position = "bottom" )  
+
+p <- p + theme(legend.direction = "horizontal", legend.position = "bottom", legend.box = "vertical")
+  
+  p 
+
+
+  
+
+
+
+
+
+
+
+
+
+
+```
+

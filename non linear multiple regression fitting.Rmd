@@ -1,0 +1,104 @@
+Title
+========================================================
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring web pages (click the **MD** toolbar button for help on Markdown).
+
+When you click the **Knit HTML** button a web page will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+summary(cars)
+```
+
+You can also embed plots, for example:
+
+```{r fig.width=7, fig.height=6}
+
+
+time <- 1:24
+p53<- runif(24)*c(rep(0.1,2), 1,2,4,6,9,14,13,6,1,1,rep(0.1,12)) +1
+srxn1 <- runif(2)*c(rep(0.1,10), 1,2,4,6,9,14,13,13,13,12,rep(13,4)) +9
+dose <- seq(0,5, length.out=  8)[8]
+new.d <- data.frame( time=time, y1=y1,y2=y2, dose = dose[1])
+unf.data <- rbind(unf.data , new.d)
+unf.data$dose <- round(unf.data$dose,2)
+
+colnames(unf.data) <-c("time", "p53", "srxn1","dose")
+unf.data.l <-melt(unf.data, measure.var=c("p53","srxn1"))
+colnames(unf.data.l) <- c("time","dose","cell_line","response")
+
+head(unf.data.l)
+
+unf.data.l.p53<-unf.data.l[ unf.data.l$cell_line == "p53",]
+pars <- lm(formula = response ~ poly(time, 4, raw=TRUE) + poly(dose, 2, raw = TRUE), data = unf.data.l.p53)
+
+?pol
+
+pars$coefficients
+
+summary(pars)
+
+pars$coefficients
+
+unf.data.l.p53$fitted <- pars$coefficients[1] + pars$coefficients[2]*unf.data.l.p53$time + 
+  pars$coefficients[3]*unf.data.l.p53$time^2 + pars$coefficients[4]*unf.data.l.p53$time^3 +
+  pars$coefficients[5]*unf.data.l.p53$time^4 +
+      pars$coefficients[6]*unf.data.l.p53$dose + pars$coefficients[7]*unf.data.l.p53$dose^2 
+        
+
+unf.data.l.p53
+
+anorex.1 <- glm(Postwt ~ Prewt + Treat + offset(Prewt),
+                family = gaussian, data = anorexia)
+
+
+qplot(data = unf.data.l.p53, x = time, y = response, color = cell_line) + 
+  layer(data=unf.data.l.p53, mapping = aes(x = time, y = fitted), geom ="line", color = "black") +
+  facet_wrap("dose") 
+
+# try fit to distribution functions
+
+glm(response ~ time + dose, family = poisson, data = unf.data.l.p53)
+
+head(unf.data.l.p53)
+
+warnings()
+
+counts <- c(18,17,15,20,10,20,25,13,12)
+outcome <- gl(3,1,9)
+treatment <- gl(3,3)
+print(d.AD <- data.frame(treatment, outcome, counts))
+glm.D93 <- glm(counts ~ outcome + treatment, family = poisson())
+anova(glm.D93)
+summary(glm.D93)
+poly()
+
+
+
+x <- 1:10
+y <- x + c(-0.5,0.5)
+
+plot(x,y, xlim=c(0,11), ylim=c(-1,12))
+
+fit1 <- lm( y~offset(x) -1 )
+fit2 <- lm( y~x )
+fit3 <- lm( y~poly(x,3) )
+fit4 <- lm( y~poly(x,9) )
+library(splines)
+fit5 <- lm( y~ns(x, 3) )
+fit6 <- lm( y~ns(x, 9) )
+
+fit7 <- lm( y ~ x + cos(x*pi) )
+
+xx <- seq(0,11, length.out=250)
+lines(xx, predict(fit1, data.frame(x=xx)), col='blue')
+lines(xx, predict(fit2, data.frame(x=xx)), col='green')
+lines(xx, predict(fit3, data.frame(x=xx)), col='red')
+lines(xx, predict(fit4, data.frame(x=xx)), col='purple')
+lines(xx, predict(fit5, data.frame(x=xx)), col='orange')
+lines(xx, predict(fit6, data.frame(x=xx)), col='grey')
+lines(xx, predict(fit7, data.frame(x=xx)), col='black')
+
+
+dev.off()
+```
+

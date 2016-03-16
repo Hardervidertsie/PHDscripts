@@ -1,0 +1,107 @@
+
+
+
+# for renaming images 
+
+
+# for when images are in folders per well
+```{r}
+require(stringr)
+kInputFilePath <- "I:/Imaging/DILI screen/Data/all cytotoxicity/2013-10-17 NIKONII"
+kInputFolders <- paste(kInputFilePath, dir(kInputFilePath), sep = "/")
+
+
+kOutputFilePath <-"I:/Imaging/DILI screen/Data/all cytotoxicity/2013-10-17 NIKONII"
+
+kOutPutFolders <- paste( kOutputFilePath  , dir(kOutputFilePath), sep ="/" )
+
+
+for ( i in 1 : length(kOutPutFolders)) {
+  
+  currentImages <- dir(kInputFolders[ i ])  
+  renamedImage2 <- gsub( "c2t", "c3t",currentImages[2] )
+    #renamedImage1 <- currentImages[1] 
+  #file.copy(paste( kInputFolders[ i ], currentImages[ 1 ], sep ="/"), paste(kOutPutFolders[ i ], renamedImage1, sep = "/" ))
+  file.copy(paste( kInputFolders[ i ], currentImages[ 2 ], sep ="/"), paste(kOutPutFolders[ i ], renamedImage2, sep = "/" ))
+}
+
+
+
+```
+
+
+
+#when they are not in folders per well yet:
+```{r}
+input.path <- 'H:/test Gerhard/tiffs'
+out.path <- 'H:/test Gerhard/renamed images'  # create new folder yourself
+
+my.files <- dir(input.path)
+library(stringr)
+for ( i in seq_along(my.files)) {
+
+  currentImage <- paste(my.files[ i ], sep = "/")  
+  
+  #OldimageNr <- str_match( currentImage,"xy[0-9]{0,3}") # for image number
+  OldimageNr <- str_match( currentImage,"t[0-9]{0,3}.tif$") # for time points  
+  OldimageNr <- gsub(".tif", "", OldimageNr)
+  imageNr<- as.numeric(gsub("t", "", OldimageNr))
+  imageNr<- imageNr + 1 # change all time points
+  if(nchar(imageNr) == 1){
+    imageNr <- paste("0", imageNr, sep ="")
+  } else if( nchar(imageNr)== 2){
+    imageNr <- paste("", imageNr, sep ="")
+  } else if( nchar(imageNr)==3){
+    imageNr <- as.character(imageNr)
+  } else
+    {
+      stop()
+    }
+  
+  renamedImage <- gsub( OldimageNr, paste("t",imageNr, sep =""),currentImage )
+  
+  file.copy(paste( input.path, currentImage, sep ="/"), paste(out.path, renamedImage, sep = "/" ))
+  paste( input.path, currentImage, sep ="/")
+  paste(input.path, renamedImage, sep = "/" )
+
+  }
+
+
+
+  
+  
+
+
+```
+
+
+images in well-folders --> add a certain amount to image names to combine a plate session that was interrupted
+
+```{r}
+rm(list=ls())
+require(stringr)
+kInputFilePath <- "/media/Image Data/POC/2013_02_06/last round including pi/XBP1_wells"
+kInputFolders <- paste(kInputFilePath, dir(kInputFilePath), sep = "/")
+
+kOutputFilePath <-"/media/Image Data/POC/2013_02_06/xbp1 chop bip nrf2 first part/TIFs/xbp1_wells"
+kOutPutFolders <- paste( kOutputFilePath  , dir(kOutputFilePath), sep ="/" )
+
+
+for ( i in 1 : length(kOutPutFolders)) {
+
+  currentImages <- dir(kInputFolders[ i ])  
+  
+  my.numbers <- unlist(str_match_all(currentImages,'[0-9]{1}.tif$' ))
+  my.numbers <- as.numeric(gsub('.tif', '', my.numbers))
+  for (j in 1 : length(my.numbers)){
+  
+    renamedImage <- gsub( "[0-9]{1}.tif$", paste(my.numbers[j] + 47, '.tif', sep = '') , currentImages[j] )
+    file.copy(paste( kInputFolders[ i ], currentImages[ j ], sep ="/"), paste(kOutPutFolders[ i ], renamedImage, sep = "/" ))
+  }
+    
+}
+
+
+
+```
+

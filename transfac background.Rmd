@@ -1,0 +1,42 @@
+Title
+========================================================
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring web pages (click the **MD** toolbar button for help on Markdown).
+
+When you click the **Knit HTML** button a web page will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+
+rm(list=ls())
+my.path.M<-"/home/winks/R_HOME/R_WORK/mArray BAC reporter studie/results/DEGs/PHH bioc BA sign overlap genes/overlap/overlap with FC filter/timeM"
+my.path.H<-"/home/winks/R_HOME/R_WORK/mArray BAC reporter studie/results/DEGs/PHH bioc BA sign overlap genes/overlap/overlap with FC filter/timeH"
+my.files.M <- dir(my.path.M)
+my.files.H <- dir(my.path.H)
+
+# get overlapping genes
+output.l= list()
+output.l.timeM = list()
+for ( i in 1: length(my.files.M)){
+
+my.data.M <- read.table(paste(my.path.M , my.files.M[i],  sep = "/"), sep =',')
+my.data.H <- read.table(paste(my.path.H , my.files.H[i],  sep = "/"), sep =',')
+#head(my.data)
+output.l[[i]] <- my.data.M
+output.l.timeM[[i]] <- my.data.H
+}
+
+output <- c(output.l, output.l.timeM)
+
+output.df <- do.call('rbind', output)
+
+dim(output.df)
+ output.df<- unique(output.df)
+
+#setwd("/home/winks/R_HOME/R_WORK/mArray BAC reporter studie/results/DEGs/PHH bioc BA sign overlap genes/overlap/timeM")
+
+write.table(output.df, file = "backgroundTRANSFAC_PHH_FClog2_1.2_p_0.05andOVERLAPmiddleANDhigh.csv", sep ='\t', row.names = F, col.names = F)
+
+
+
+```
+
